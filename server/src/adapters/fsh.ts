@@ -39,16 +39,29 @@ interface Span {
   end: number;
 }
 
+interface SliceItem {
+  /** The contained item: a slice name, or extension name/url. */
+  item: string;
+  /** The `named` alias (extension usages), if present. */
+  named?: string;
+  min?: number;
+  max?: string;
+}
+
 interface FshRule {
   path: string;
   /** Offset of the line start. */
   lineStart: number;
   /** Offset just past the line content (before newline). */
   lineEnd: number;
+  /** The text after the path token (the rule body). */
+  rest: string;
   /** Span of the `min..max` token, if present. */
   card?: Span & { min: number; max: string };
   /** Span of the path token. */
   pathSpan: Span;
+  /** Parsed `contains` slice/extension items, if this is a contains rule. */
+  contains?: SliceItem[];
   /** Binding clause `from VS (strength)` if present. */
   binding?: {
     span: Span; // whole "from ... (strength)" clause
@@ -69,10 +82,55 @@ interface FshEntity {
   rules: FshRule[];
 }
 
-/** Strip a trailing `//` line comment, returning the safe length to scan. */
+/**
+ * Strip a trailing `//` line comment, returning the safe length to scan.
+ * Skips `://` so URLs (e.g. canonical value sets / extensions) are not mistaken
+ * for the start of a comment.
+ */
 function contentLength(line: string): number {
-  const i = line.indexOf("//");
-  return i === -1 ? line.length : i;
+  let from = 0;
+  for (;;) {
+    const i = line.indexOf("//", from);
+    if (i === -1) return line.length;
+    if (i > 0 && line[i - 1] === ":") {
+      from = i + 2;
+      continue;
+    }
+    return i;
+  }
+}
+
+/** Parse the body of a `contains` rule (the text after the `contains` keyword). */
+function parseContains(body: string): SliceItem[] {
+  return body
+    .split(/\band\b/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part): SliceItem | null => {
+      // <item> [named <name>] [min..max] [flags...]
+      const named = /^(\S+)\s+named\s+(\S+)(.*)$/.exec(part);
+      let item: string;
+      let name: string | undefined;
+      let tail: string;
+      if (named) {
+        item = named[1];
+        name = named[2];
+        tail = named[3];
+      } else {
+        const m = /^(\S+)(.*)$/.exec(part);
+        if (!m) return null;
+        item = m[1];
+        tail = m[2];
+      }
+      const card = CARD_RE.exec(tail);
+      return {
+        item,
+        named: name,
+        min: card ? Number(card[1]) : undefined,
+        max: card ? card[2] : undefined,
+      };
+    })
+    .filter((x): x is SliceItem => x !== null);
 }
 
 function parseRule(line: string, lineStart: number): FshRule | null {
@@ -87,15 +145,23 @@ function parseRule(line: string, lineStart: number): FshRule | null {
   const wsLen = content.slice(afterStar).match(/^\s*/)![0].length;
   const pStart = lineStart + afterStar + wsLen;
   const path = m[2];
+  const rest = content.slice(afterStar + wsLen + path.length);
+  const restStart = pStart + path.length;
+
   const rule: FshRule = {
     path,
     lineStart,
     lineEnd: lineStart + safeLen,
+    rest,
     pathSpan: { start: pStart, end: pStart + path.length },
   };
 
-  const rest = content.slice(afterStar + wsLen + path.length);
-  const restStart = pStart + path.length;
+  const containsMatch = /\bcontains\b/.exec(rest);
+  if (containsMatch) {
+    // A slicing/extension rule — cards here belong to the slices, not the path.
+    rule.contains = parseContains(rest.slice(containsMatch.index + "contains".length));
+    return rule;
+  }
 
   const card = CARD_RE.exec(rest);
   if (card && card.index >= 0) {
@@ -211,27 +277,51 @@ export const fshAdapter: Adapter = {
     const profile = entities.find((e) => e.kind === "Profile");
     if (!profile) return null;
 
-    // Aggregate rules per path into element rows.
-    const byPath = new Map<string, ElementView>();
+    // Aggregate rules per path (and per slice) into element rows.
+    const type = profile.header.Parent ?? "?";
+    const byKey = new Map<string, ElementView>();
     const order: string[] = [];
-    for (const rule of profile.rules) {
-      const path = `${profile.header.Parent ?? "?"}.${rule.path}`;
-      let row = byPath.get(rule.path);
+    const rowFor = (key: string, path: string, init?: Partial<ElementView>) => {
+      let row = byKey.get(key);
       if (!row) {
-        row = { id: path, path, inDifferential: true };
-        byPath.set(rule.path, row);
-        order.push(rule.path);
+        row = { id: path, path, inDifferential: true, ...init };
+        byKey.set(key, row);
+        order.push(key);
       }
+      return row;
+    };
+
+    for (const rule of profile.rules) {
+      const path = `${type}.${rule.path}`;
+
+      if (rule.contains) {
+        // Slicing/extension rule. Ensure the sliced base element has a row.
+        const base = rowFor(rule.path, path);
+        const isExtension = rule.path === "extension" || rule.path.endsWith(".extension");
+        for (const slice of rule.contains) {
+          const sliceName = slice.named ?? slice.item;
+          const sliceRow = rowFor(`${rule.path}:${sliceName}`, path, {
+            sliceName,
+            min: slice.min,
+            max: slice.max,
+            extensionUrl: isExtension ? slice.item : undefined,
+          });
+          sliceRow.id = `${path}:${sliceName}`;
+        }
+        base.slicing = base.slicing ?? { rules: "open" };
+        continue;
+      }
+
+      const row = rowFor(rule.path, path);
       if (rule.card) {
         row.min = rule.card.min;
         row.max = rule.card.max;
       }
       if (rule.binding) {
-        const binding: ElementBinding = {
+        row.binding = {
           valueSet: rule.binding.valueSet,
           strength: rule.binding.strength,
         };
-        row.binding = binding;
       }
     }
 
@@ -243,7 +333,7 @@ export const fshAdapter: Adapter = {
       baseDefinition: profile.header.Parent,
       derivation: "constraint",
       url: undefined,
-      elements: order.map((p) => byPath.get(p)!),
+      elements: order.map((k) => byKey.get(k)!),
     };
   },
 
@@ -255,11 +345,16 @@ export const fshAdapter: Adapter = {
       const entities = parseEntities(working);
       const profile = entities.find((e) => e.kind === "Profile");
       if (!profile) continue;
-      // Edit.path is the fully-qualified path (Type.element). FSH rules use the
-      // element path relative to the resource, so strip the leading type.
-      const relPath = edit.path.includes(".")
-        ? edit.path.slice(edit.path.indexOf(".") + 1)
-        : edit.path;
+      const type = profile.header.Parent ?? "";
+      // Edit.path is the fully-qualified path (Type or Type.element). FSH rules
+      // use the element path relative to the resource, so strip the type prefix.
+      let relPath: string;
+      if (edit.path === type) relPath = "";
+      else if (edit.path.startsWith(type + ".")) relPath = edit.path.slice(type.length + 1);
+      else if (edit.path.includes(".")) relPath = edit.path.slice(edit.path.indexOf(".") + 1);
+      else relPath = edit.path;
+      // FSH addresses slices with [name] notation, not the id's ":name".
+      relPath = relPath.replace(/:([A-Za-z0-9_-]+)/g, "[$1]");
 
       const change = computeRuleChange(working, profile, relPath, edit);
       if (change) {
@@ -316,6 +411,44 @@ function computeRuleChange(
     }
     return appendRule(profile, `* ${relPath} from ${edit.valueSet} (${edit.strength})`,
       edit.path, `binding → ${edit.valueSet} (${edit.strength})`);
+  }
+
+  if (edit.kind === "addSlice") {
+    const item = `${edit.sliceName} ${edit.min}..${edit.max}`;
+    const existing = rulesForPath.find((r) => r.contains);
+    if (existing) {
+      return {
+        start: existing.lineEnd,
+        end: existing.lineEnd,
+        newText: ` and ${item}`,
+        description: `${edit.path} slice + ${edit.sliceName}`,
+      };
+    }
+    const lines: string[] = [];
+    if (edit.discriminator && !rulesForPath.some((r) => /\^slicing/.test(r.rest))) {
+      lines.push(`* ${relPath} ^slicing.discriminator[0].type = #${edit.discriminator.type}`);
+      lines.push(`* ${relPath} ^slicing.discriminator[0].path = "${edit.discriminator.path}"`);
+      lines.push(`* ${relPath} ^slicing.rules = #open`);
+    }
+    lines.push(`* ${relPath} contains ${item}`);
+    return appendRule(profile, lines.join("\n"), edit.path, `slice + ${edit.sliceName}`);
+  }
+
+  if (edit.kind === "addExtension") {
+    const extPath = relPath ? `${relPath}.extension` : "extension";
+    const ref = edit.extensionName ?? edit.extensionUrl;
+    const item = `${ref} named ${edit.sliceName} ${edit.min}..${edit.max}`;
+    const existing = profile.rules.find((r) => r.path === extPath && r.contains);
+    if (existing) {
+      return {
+        start: existing.lineEnd,
+        end: existing.lineEnd,
+        newText: ` and ${item}`,
+        description: `${extPath} + extension ${edit.sliceName}`,
+      };
+    }
+    return appendRule(profile, `* ${extPath} contains ${item}`, extPath,
+      `+ extension ${edit.sliceName}`);
   }
   return null;
 }

@@ -54,6 +54,27 @@ function differentialLength(root: Node | undefined): number {
   return elements?.children?.length ?? 0;
 }
 
+/** Index of the base (un-sliced) element for a path — the slicing header. */
+function findBaseElementIndex(
+  root: Node | undefined,
+  path: string,
+): number | undefined {
+  const elements = root && findNodeAtLocation(root, ["differential", "element"]);
+  if (!elements || elements.type !== "array" || !elements.children) return undefined;
+  for (let i = 0; i < elements.children.length; i++) {
+    const el = elements.children[i];
+    const p = findNodeAtLocation(el, ["path"])?.value;
+    const sliceName = findNodeAtLocation(el, ["sliceName"])?.value;
+    if (p === path && sliceName === undefined) return i;
+  }
+  return undefined;
+}
+
+function hasSlicing(root: Node | undefined, idx: number): boolean {
+  const el = root && findNodeAtLocation(root, ["differential", "element", idx]);
+  return !!el && findNodeAtLocation(el, ["slicing"]) !== undefined;
+}
+
 export const jsonAdapter: Adapter = {
   language: "json",
   extensions: [".json"],
@@ -87,21 +108,35 @@ export const jsonAdapter: Adapter = {
     if (sd.resourceType !== "StructureDefinition") return null;
 
     const diff: any[] = sd.differential?.element ?? [];
-    const elements: ElementView[] = diff.map((el): ElementView => ({
-      id: el.id ?? el.path,
-      path: el.path,
-      min: el.min,
-      max: el.max,
-      short: el.short,
-      mustSupport: el.mustSupport,
-      types: Array.isArray(el.type)
-        ? el.type.map((t: any) => t.code).filter(Boolean)
-        : undefined,
-      binding: el.binding
-        ? { strength: el.binding.strength, valueSet: el.binding.valueSet }
-        : undefined,
-      inDifferential: true,
-    }));
+    const elements: ElementView[] = diff.map((el): ElementView => {
+      const extProfile = Array.isArray(el.type)
+        ? el.type.map((t: any) => t.profile?.[0]).find(Boolean)
+        : undefined;
+      return {
+        id: el.id ?? el.path,
+        path: el.path,
+        min: el.min,
+        max: el.max,
+        short: el.short,
+        mustSupport: el.mustSupport,
+        types: Array.isArray(el.type)
+          ? el.type.map((t: any) => t.code).filter(Boolean)
+          : undefined,
+        binding: el.binding
+          ? { strength: el.binding.strength, valueSet: el.binding.valueSet }
+          : undefined,
+        sliceName: el.sliceName,
+        slicing: el.slicing
+          ? {
+              discriminator: el.slicing.discriminator,
+              rules: el.slicing.rules,
+              ordered: el.slicing.ordered,
+            }
+          : undefined,
+        extensionUrl: extProfile,
+        inDifferential: true,
+      };
+    });
 
     return {
       artifactId: artifact.id,
@@ -155,6 +190,46 @@ export const jsonAdapter: Adapter = {
           mods.push({ path: ["differential", "element", idx, "binding"], value: bindingValue });
         }
         description = `${edit.path} binding → ${edit.valueSet} (${edit.strength})`;
+      } else if (edit.kind === "addSlice") {
+        const baseIdx = findBaseElementIndex(root, edit.path);
+        if (baseIdx !== undefined && !hasSlicing(root, baseIdx)) {
+          mods.push({
+            path: ["differential", "element", baseIdx, "slicing"],
+            value: {
+              ...(edit.discriminator
+                ? { discriminator: [{ type: edit.discriminator.type, path: edit.discriminator.path }] }
+                : {}),
+              rules: "open",
+            },
+          });
+        }
+        mods.push({
+          path: ["differential", "element", differentialLength(root)],
+          value: {
+            id: `${edit.path}:${edit.sliceName}`,
+            path: edit.path,
+            sliceName: edit.sliceName,
+            min: edit.min,
+            max: edit.max,
+          },
+          insert: true,
+        });
+        description = `${edit.path} slice + ${edit.sliceName}`;
+      } else if (edit.kind === "addExtension") {
+        const extPath = `${edit.path}.extension`;
+        mods.push({
+          path: ["differential", "element", differentialLength(root)],
+          value: {
+            id: `${extPath}:${edit.sliceName}`,
+            path: extPath,
+            sliceName: edit.sliceName,
+            min: edit.min,
+            max: edit.max,
+            type: [{ code: "Extension", profile: [edit.extensionUrl] }],
+          },
+          insert: true,
+        });
+        description = `${extPath} + extension ${edit.sliceName}`;
       }
 
       for (const m of mods) {

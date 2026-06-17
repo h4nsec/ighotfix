@@ -163,6 +163,7 @@ function ProfileEditor({
   pending: Edit[];
   onEdit: (e: Edit) => void;
 }) {
+  const [addExt, setAddExt] = useState(false);
   return (
     <>
       <div className="profile-head">
@@ -171,13 +172,28 @@ function ProfileEditor({
           {profile.name} · constrains {profile.type}
           {profile.derivation ? ` · ${profile.derivation}` : ""}
         </div>
+        <div className="head-actions">
+          <button onClick={() => setAddExt((v) => !v)}>+ Extension</button>
+        </div>
+        {addExt && (
+          <AddExtensionForm
+            artifactId={profile.artifactId}
+            basePath={profile.type}
+            onAdd={(e) => {
+              onEdit(e);
+              setAddExt(false);
+            }}
+            onCancel={() => setAddExt(false)}
+          />
+        )}
       </div>
       <table>
         <thead>
           <tr>
-            <th style={{ width: "35%" }}>Path</th>
-            <th style={{ width: "15%" }}>Card.</th>
+            <th style={{ width: "38%" }}>Path</th>
+            <th style={{ width: "14%" }}>Card.</th>
             <th>Binding</th>
+            <th style={{ width: "70px" }}></th>
           </tr>
         </thead>
         <tbody>
@@ -193,7 +209,119 @@ function ProfileEditor({
           ))}
         </tbody>
       </table>
+      {pending.some((e) => e.kind === "addSlice" || e.kind === "addExtension") && (
+        <div className="pending-adds">
+          <div className="group-label">Pending additions</div>
+          {pending
+            .filter((e) => e.kind === "addSlice" || e.kind === "addExtension")
+            .map((e, i) => (
+              <div key={i} className="pending-add">
+                {e.kind === "addSlice"
+                  ? `slice ${e.path}:${e.sliceName} (${e.min}..${e.max})`
+                  : `extension ${e.path}.extension:${e.sliceName} → ${e.extensionUrl}`}
+              </div>
+            ))}
+        </div>
+      )}
     </>
+  );
+}
+
+function AddExtensionForm({
+  artifactId,
+  basePath,
+  onAdd,
+  onCancel,
+}: {
+  artifactId: string;
+  basePath: string;
+  onAdd: (e: Edit) => void;
+  onCancel: () => void;
+}) {
+  const [sliceName, setSliceName] = useState("");
+  const [url, setUrl] = useState("");
+  const [min, setMin] = useState(0);
+  const [max, setMax] = useState("1");
+  return (
+    <div className="inline-form">
+      <input placeholder="slice name" value={sliceName} onChange={(e) => setSliceName(e.target.value)} />
+      <input
+        placeholder="extension url"
+        size={36}
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+      />
+      <input className="num" type="number" min={0} value={min} onChange={(e) => setMin(Number(e.target.value))} />
+      <span>..</span>
+      <input className="num" value={max} onChange={(e) => setMax(e.target.value)} />
+      <button
+        className="primary"
+        disabled={!sliceName || !url}
+        onClick={() =>
+          onAdd({
+            kind: "addExtension",
+            artifactId,
+            path: basePath,
+            sliceName,
+            extensionUrl: url,
+            min,
+            max,
+          })
+        }
+      >
+        Add
+      </button>
+      <button onClick={onCancel}>Cancel</button>
+    </div>
+  );
+}
+
+function AddSliceForm({
+  artifactId,
+  path,
+  onAdd,
+  onCancel,
+}: {
+  artifactId: string;
+  path: string;
+  onAdd: (e: Edit) => void;
+  onCancel: () => void;
+}) {
+  const [sliceName, setSliceName] = useState("");
+  const [min, setMin] = useState(0);
+  const [max, setMax] = useState("1");
+  const [discPath, setDiscPath] = useState("");
+  return (
+    <div className="inline-form">
+      <input placeholder="slice name" value={sliceName} onChange={(e) => setSliceName(e.target.value)} />
+      <input className="num" type="number" min={0} value={min} onChange={(e) => setMin(Number(e.target.value))} />
+      <span>..</span>
+      <input className="num" value={max} onChange={(e) => setMax(e.target.value)} />
+      <input
+        placeholder="discriminator path (opt)"
+        size={18}
+        value={discPath}
+        onChange={(e) => setDiscPath(e.target.value)}
+      />
+      <button
+        className="primary"
+        disabled={!sliceName}
+        onClick={() =>
+          onAdd({
+            kind: "addSlice",
+            artifactId,
+            path,
+            sliceName,
+            min,
+            max,
+            discriminator: discPath ? { type: "value", path: discPath } : undefined,
+          })
+        }
+      >
+        Add
+      </button>
+      <button onClick={onCancel}>Cancel</button>
+    </div>
   );
 }
 
@@ -209,11 +337,13 @@ function ElementRow({
   pending: Edit[];
   onEdit: (e: Edit) => void;
 }) {
+  const [addingSlice, setAddingSlice] = useState(false);
+  const editKey = el.id; // slices share path with their base, so key on id
   const pendingCard = pending.find(
-    (e) => e.kind === "setCardinality" && e.path === el.path,
+    (e) => e.kind === "setCardinality" && e.path === editKey,
   ) as Extract<Edit, { kind: "setCardinality" }> | undefined;
   const pendingBind = pending.find(
-    (e) => e.kind === "setBinding" && e.path === el.path,
+    (e) => e.kind === "setBinding" && e.path === editKey,
   ) as Extract<Edit, { kind: "setBinding" }> | undefined;
 
   const min = pendingCard?.min ?? el.min ?? 0;
@@ -222,17 +352,35 @@ function ElementRow({
   const strength = pendingBind?.strength ?? el.binding?.strength ?? "required";
 
   const dirty = !!pendingCard || !!pendingBind;
+  const isSlice = !!el.sliceName;
+  const isExtension = el.path.endsWith(".extension");
+  // Only repeating-or-sliceable elements get a slice action; keep it simple by
+  // offering it on non-slice rows.
+  const canSlice = !isSlice;
 
   return (
-    <tr className={dirty ? "dirty" : ""}>
-      <td className="path">
-        {el.path}
-        {el.mustSupport && <span className="flag">MS</span>}
-        {el.types && el.types.length > 0 && (
-          <span className="flag">{el.types.join(" | ")}</span>
-        )}
-      </td>
-      <td>
+    <>
+      <tr className={dirty ? "dirty" : ""}>
+        <td className={"path" + (isSlice ? " slice-row" : "")}>
+          {isSlice ? (
+            <>
+              <span className="slice-marker">└</span>
+              <span className="badge slice">slice</span> {el.sliceName}
+              {isExtension && <span className="badge ext">ext</span>}
+              {el.extensionUrl && <span className="ext-url">{el.extensionUrl}</span>}
+            </>
+          ) : (
+            <>
+              {el.path}
+              {el.slicing && <span className="badge slicing">sliced</span>}
+            </>
+          )}
+          {el.mustSupport && <span className="flag">MS</span>}
+          {el.types && el.types.length > 0 && !isExtension && (
+            <span className="flag">{el.types.join(" | ")}</span>
+          )}
+        </td>
+        <td>
         <div className="card-edit">
           <input
             type="number"
@@ -242,7 +390,7 @@ function ElementRow({
               onEdit({
                 kind: "setCardinality",
                 artifactId,
-                path: el.path,
+                path: editKey,
                 min: Number(e.target.value),
                 max,
               })
@@ -255,7 +403,7 @@ function ElementRow({
               onEdit({
                 kind: "setCardinality",
                 artifactId,
-                path: el.path,
+                path: editKey,
                 min,
                 max: e.target.value,
               })
@@ -272,7 +420,7 @@ function ElementRow({
             onEdit({
               kind: "setBinding",
               artifactId,
-              path: el.path,
+              path: editKey,
               valueSet: e.target.value,
               strength: strength as any,
             })
@@ -284,7 +432,7 @@ function ElementRow({
             onEdit({
               kind: "setBinding",
               artifactId,
-              path: el.path,
+              path: editKey,
               valueSet: vs,
               strength: e.target.value as any,
             })
@@ -296,6 +444,29 @@ function ElementRow({
           <option value="example">example</option>
         </select>
       </td>
+      <td className="row-actions">
+        {canSlice && (
+          <button title="Add slice" onClick={() => setAddingSlice((v) => !v)}>
+            + slice
+          </button>
+        )}
+      </td>
     </tr>
+      {addingSlice && (
+        <tr className="form-row">
+          <td colSpan={4}>
+            <AddSliceForm
+              artifactId={artifactId}
+              path={el.path}
+              onAdd={(e) => {
+                onEdit(e);
+                setAddingSlice(false);
+              }}
+              onCancel={() => setAddingSlice(false)}
+            />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }

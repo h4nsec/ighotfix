@@ -9,4 +9,11 @@ Description: "Used to exercise the FSH adapter."
 * status 1..1 MS
 * code 1..1
 * code from MyObservationCodes (preferred)
+* category 0..* MS
 * subject MS
+* category ^slicing.discriminator[0].type = #value
+* category ^slicing.discriminator[0].path = "code"
+* category ^slicing.rules = #open
+* category contains vitalsign 0..1
+
+* extension contains http://example.org/StructureDefinition/obs-bodysite named bodySite 0..1

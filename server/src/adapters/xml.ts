@@ -154,11 +154,99 @@ export const xmlAdapter: Adapter = {
         working = ensureElement(working, edit.path);
         working = ensureBinding(working, edit.path, edit.valueSet, edit.strength);
         descs.push(`${edit.path} binding → ${edit.valueSet} (${edit.strength})`);
+      } else if (edit.kind === "addSlice") {
+        working = ensureElement(working, edit.path);
+        if (edit.discriminator) working = ensureSlicing(working, edit.path, edit.discriminator);
+        working = insertDifferentialElement(working, {
+          id: `${edit.path}:${edit.sliceName}`,
+          path: edit.path,
+          sliceName: edit.sliceName,
+          min: edit.min,
+          max: edit.max,
+        });
+        descs.push(`${edit.path} slice + ${edit.sliceName}`);
+      } else if (edit.kind === "addExtension") {
+        const extPath = `${edit.path}.extension`;
+        working = insertDifferentialElement(working, {
+          id: `${extPath}:${edit.sliceName}`,
+          path: extPath,
+          sliceName: edit.sliceName,
+          min: edit.min,
+          max: edit.max,
+          extensionProfile: edit.extensionUrl,
+        });
+        descs.push(`${extPath} + extension ${edit.sliceName}`);
       }
     }
     return collapseToOriginal(src.text, working, descs);
   },
 };
+
+interface NewElement {
+  id: string;
+  path: string;
+  sliceName?: string;
+  min: number;
+  max: string;
+  extensionProfile?: string;
+}
+
+/** Build and insert a new <element> before the differential's closing tag. */
+function insertDifferentialElement(text: string, spec: NewElement): string {
+  const root = findRoot(text);
+  const diff = root && findDifferential(root);
+  if (!diff) return text;
+
+  const elIndent = childIndent(text, diff);
+  const i = elIndent + "  ";
+  const lines: string[] = [`${elIndent}<element id="${escapeXmlAttr(spec.id)}">`];
+  lines.push(`${i}<path value="${escapeXmlAttr(spec.path)}"/>`);
+  if (spec.sliceName) lines.push(`${i}<sliceName value="${escapeXmlAttr(spec.sliceName)}"/>`);
+  lines.push(`${i}<min value="${spec.min}"/>`);
+  lines.push(`${i}<max value="${escapeXmlAttr(spec.max)}"/>`);
+  if (spec.extensionProfile) {
+    lines.push(`${i}<type>`);
+    lines.push(`${i}  <code value="Extension"/>`);
+    lines.push(`${i}  <profile value="${escapeXmlAttr(spec.extensionProfile)}"/>`);
+    lines.push(`${i}</type>`);
+  }
+  lines.push(`${elIndent}</element>`);
+  const block = "\n" + lines.join("\n");
+  return splice(text, diff.closeTagStart, diff.closeTagStart, block);
+}
+
+/** Find the un-sliced base element for a path (the slicing header). */
+function findBaseElement(diff: XmlElement, path: string): XmlElement | undefined {
+  return children(diff, "element").find(
+    (el) =>
+      (attrValue(el, "id") === path || leafValue(child(el, "path")) === path) &&
+      !child(el, "sliceName"),
+  );
+}
+
+/** Ensure a <slicing> block exists on the base element for `path`. */
+function ensureSlicing(
+  text: string,
+  path: string,
+  disc: { type: string; path: string },
+): string {
+  const root = findRoot(text);
+  const diff = root && findDifferential(root);
+  const base = diff && findBaseElement(diff, path);
+  if (!base || child(base, "slicing")) return text;
+
+  const { at, indent } = insertionPoint(text, base, "slicing", ELEMENT_ORDER);
+  const i = indent + "  ";
+  const block =
+    `\n${indent}<slicing>` +
+    `\n${i}<discriminator>` +
+    `\n${i}  <type value="${escapeXmlAttr(disc.type)}"/>` +
+    `\n${i}  <path value="${escapeXmlAttr(disc.path)}"/>` +
+    `\n${i}</discriminator>` +
+    `\n${i}<rules value="open"/>` +
+    `\n${indent}</slicing>`;
+  return splice(text, at, at, block);
+}
 
 function numberOrUndef(v: string | undefined): number | undefined {
   if (v === undefined) return undefined;
