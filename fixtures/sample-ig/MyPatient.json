@@ -1,0 +1,29 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "my-patient",
+  "url": "http://example.org/StructureDefinition/my-patient",
+  "name": "MyPatient",
+  "title": "My Patient Profile",
+  "status": "draft",
+  "type": "Patient",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Patient",
+  "derivation": "constraint",
+  "differential": {
+    "element": [
+      {
+        "id": "Patient.identifier",
+        "path": "Patient.identifier",
+        "min": 1,
+        "max": "*",
+        "mustSupport": true
+      },
+      {
+        "id": "Patient.gender",
+        "path": "Patient.gender",
+        "short": "Administrative gender",
+        "min": 1,
+        "max": "*"
+      }
+    ]
+  }
+}

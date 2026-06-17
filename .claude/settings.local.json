@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm -w server run test)",
+      "Bash(npm -w server run dev)",
+      "Bash(curl -s http://localhost:4000/api/health)",
+      "Bash(curl -s -X POST http://localhost:4000/api/load -H \"Content-Type: application/json\" -d \"{\\\\\"root\\\\\":\\\\\"C:/Users/User/Documents/IG Builder/fixtures/sample-ig\\\\\"}\")",
+      "Bash(taskkill //F //IM node.exe)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(rm -f server.log client.log)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git rm *)",
+      "Bash(git commit -q -m ' *)"
+    ]
+  }
+}
