@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StructureDefinition xmlns="http://hl7.org/fhir">
+  <id value="my-encounter"/>
+  <url value="http://example.org/StructureDefinition/my-encounter"/>
+  <name value="MyEncounter"/>
+  <title value="My Encounter Profile"/>
+  <status value="draft"/>
+  <type value="Encounter"/>
+  <baseDefinition value="http://hl7.org/fhir/StructureDefinition/Encounter"/>
+  <derivation value="constraint"/>
+  <differential>
+    <element id="Encounter.status">
+      <path value="Encounter.status"/>
+      <min value="1"/>
+      <max value="1"/>
+    </element>
+    <element id="Encounter.class">
+      <path value="Encounter.class"/>
+      <short value="Classification of patient encounter"/>
+    </element>
+  </differential>
+</StructureDefinition>

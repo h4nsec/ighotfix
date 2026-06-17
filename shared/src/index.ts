@@ -43,6 +43,12 @@ export interface ElementBinding {
   valueSet?: string;
 }
 
+export interface SlicingInfo {
+  discriminator?: { type: string; path: string }[];
+  rules?: "open" | "closed" | "openAtEnd";
+  ordered?: boolean;
+}
+
 /** One row in the profile element table (from the differential). */
 export interface ElementView {
   /** ElementDefinition.id, e.g. "Observation.status". */
@@ -55,6 +61,12 @@ export interface ElementView {
   mustSupport?: boolean;
   types?: string[];
   binding?: ElementBinding;
+  /** Set when this element defines a slice (ElementDefinition.sliceName). */
+  sliceName?: string;
+  /** Slicing definition present on this element (the slice "header"). */
+  slicing?: SlicingInfo;
+  /** For an extension element, the profile URL of the extension it references. */
+  extensionUrl?: string;
   /** True when the element only exists in the differential (a constraint). */
   inDifferential: boolean;
 }
@@ -77,7 +89,9 @@ export interface ProfileView {
 
 export type Edit =
   | SetCardinalityEdit
-  | SetBindingEdit;
+  | SetBindingEdit
+  | AddSliceEdit
+  | AddExtensionEdit;
 
 export interface SetCardinalityEdit {
   kind: "setCardinality";
@@ -94,6 +108,35 @@ export interface SetBindingEdit {
   path: string;
   valueSet: string;
   strength: NonNullable<ElementBinding["strength"]>;
+}
+
+/** Add a named slice to a (repeating) element. */
+export interface AddSliceEdit {
+  kind: "addSlice";
+  artifactId: string;
+  /** The element being sliced, e.g. "Patient.identifier". */
+  path: string;
+  sliceName: string;
+  min: number;
+  max: string;
+  /** Optional discriminator to add to the slicing header if none exists. */
+  discriminator?: { type: string; path: string };
+}
+
+/** Add an extension usage (a slice on the `extension` element) to a profile. */
+export interface AddExtensionEdit {
+  kind: "addExtension";
+  artifactId: string;
+  /** Element to extend, e.g. "Patient" (→ Patient.extension) or a nested path. */
+  path: string;
+  /** Slice name for the extension usage. */
+  sliceName: string;
+  /** Canonical URL of the extension definition being referenced. */
+  extensionUrl: string;
+  /** In FSH, the profile name/alias used in `contains ... named`. */
+  extensionName?: string;
+  min: number;
+  max: string;
 }
 
 /** Result of applying one or more edits to an artifact's source. */

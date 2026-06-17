@@ -12,7 +12,7 @@ import type {
   ProfileView,
   TextChange,
 } from "@igb/shared";
-import type { Adapter, LoadedSource } from "./types.js";
+import { collapseToOriginal, type Adapter, type LoadedSource } from "./types.js";
 
 const FORMAT = {
   insertSpaces: true,
@@ -176,10 +176,8 @@ export const jsonAdapter: Adapter = {
     }
 
     // The accumulated `changes` were computed against evolving working copies,
-    // so their offsets are not all relative to the original. Recompute a single
-    // clean diff: emit one replacement of the whole document is wasteful, so
-    // instead we return a single change spanning the changed region.
-    return collapseToOriginal(src.text, working, changes);
+    // so report a single clean, offset-correct splice relative to the original.
+    return collapseToOriginal(src.text, working, changes.map((c) => c.description));
   },
 };
 
@@ -193,35 +191,4 @@ function applyJsoncEdits(
     out = out.slice(0, e.offset) + e.content + out.slice(e.offset + e.length);
   }
   return out;
-}
-
-/**
- * Because we applied edits against successive working copies, produce a single
- * minimal TextChange describing original→final by trimming the common prefix
- * and suffix. This keeps the round-trip format-preserving and offset-correct.
- */
-function collapseToOriginal(
-  original: string,
-  final: string,
-  _raw: TextChange[],
-): TextChange[] {
-  if (original === final) return [];
-  let start = 0;
-  const min = Math.min(original.length, final.length);
-  while (start < min && original[start] === final[start]) start++;
-  let endO = original.length;
-  let endF = final.length;
-  while (endO > start && endF > start && original[endO - 1] === final[endF - 1]) {
-    endO--;
-    endF--;
-  }
-  const descriptions = _raw.map((c) => c.description).filter(Boolean);
-  return [
-    {
-      start,
-      end: endO,
-      newText: final.slice(start, endF),
-      description: [...new Set(descriptions)].join("; "),
-    },
-  ];
 }
