@@ -29,4 +29,7 @@ npm install
 npm run dev        # starts server (4000) + client (5173)
 ```
 
-Point the app at an IG folder (a directory of `.fsh`, `.json`, `.xml` artifacts).
+Then open http://localhost:5173 and click **Browse…** to navigate to an IG folder
+(a directory of `.fsh`, `.json`, `.xml` artifacts) — folders that look like an IG
+root are flagged, and a file-count hint shows what will load. You can still paste an
+absolute path into the box instead.

@@ -113,5 +113,8 @@ describe("xml adapter", () => {
     expect(out).toContain('<min value="1"/>');
     // Still well-formed: differential close tag intact and after the new element.
     expect(out.indexOf("Encounter.period")).toBeLessThan(out.indexOf("</differential>"));
+    // The closing tag keeps its own line (no glued </element></differential>).
+    expect(out).not.toContain("</element></differential>");
+    expect(out).toContain("</element>\n  </differential>");
   });
 });

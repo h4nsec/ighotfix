@@ -212,7 +212,17 @@ function insertDifferentialElement(text: string, spec: NewElement): string {
   }
   lines.push(`${elIndent}</element>`);
   const block = "\n" + lines.join("\n");
-  return splice(text, diff.closeTagStart, diff.closeTagStart, block);
+  const at = differentialInsertPoint(diff);
+  return splice(text, at, at, block);
+}
+
+/**
+ * Where to insert a new <element>: just after the last existing element (so the
+ * differential's closing tag keeps its own line), or right after the open tag.
+ */
+function differentialInsertPoint(diff: XmlElement): number {
+  const els = children(diff, "element");
+  return els.length ? els[els.length - 1].closeTagEnd : diff.openTagEnd;
 }
 
 /** Find the un-sliced base element for a path (the slicing header). */
@@ -327,16 +337,8 @@ function ensureElement(text: string, path: string): string {
     `\n${elIndent}<element id="${escapeXmlAttr(path)}">` +
     `\n${inner}<path value="${escapeXmlAttr(path)}"/>` +
     `\n${elIndent}</element>`;
-  // Insert before the differential's closing tag.
-  return splice(text, diff.closeTagStart, diff.closeTagStart, trimTrailingIndent(text, diff.closeTagStart, block));
-}
-
-/**
- * When inserting before a closing tag, the text immediately before it is usually
- * `\n{indent}`. Our block already starts with `\n`, so the insert lands cleanly.
- */
-function trimTrailingIndent(_text: string, _at: number, block: string): string {
-  return block;
+  const at = differentialInsertPoint(diff);
+  return splice(text, at, at, block);
 }
 
 function ensureBinding(text: string, path: string, valueSet: string, strength: string): string {

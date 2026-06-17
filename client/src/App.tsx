@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { Artifact, Edit, ElementView, ProfileView } from "@igb/shared";
 import { applyEdits, getProfile, loadIg } from "./api.js";
+import { FolderPicker } from "./FolderPicker.js";
 
 const DEFAULT_ROOT = "C:/Users/User/Documents/IG Builder/fixtures/sample-ig";
 
@@ -12,12 +13,13 @@ export function App() {
   const [pending, setPending] = useState<Edit[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState(false);
 
-  async function doLoad() {
+  async function doLoad(target = root) {
     setError(null);
     setBusy(true);
     try {
-      const summary = await loadIg(root);
+      const summary = await loadIg(target);
       setArtifacts(summary.artifacts);
       setSelected(null);
       setProfile(null);
@@ -79,10 +81,25 @@ export function App() {
           placeholder="Path to IG folder…"
           spellCheck={false}
         />
-        <button className="primary" onClick={doLoad} disabled={busy}>
+        <button onClick={() => setPicking(true)} disabled={busy}>
+          Browse…
+        </button>
+        <button className="primary" onClick={() => doLoad()} disabled={busy}>
           Load IG
         </button>
       </div>
+
+      {picking && (
+        <FolderPicker
+          initialPath={root}
+          onClose={() => setPicking(false)}
+          onPick={(p) => {
+            setRoot(p);
+            setPicking(false);
+            doLoad(p);
+          }}
+        />
+      )}
 
       {error && <div className="error">{error}</div>}
 

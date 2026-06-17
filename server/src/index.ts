@@ -9,6 +9,7 @@ import type {
   ProfileView,
 } from "@igb/shared";
 import { loadIg, loadSource } from "./loader.js";
+import { browse } from "./browse.js";
 import {
   adapterForExtension,
   applyChanges,
@@ -23,6 +24,19 @@ let currentRoot: string | null = null;
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, root: currentRoot });
+});
+
+app.get("/api/browse", async (req, res) => {
+  const dir = String(req.query.path ?? "");
+  try {
+    res.json(await browse(dir));
+  } catch (err) {
+    res.status(400).json({ error: String(err) });
+  }
+});
+
+app.get("/api/home", (_req, res) => {
+  res.json({ home: process.env.USERPROFILE ?? process.env.HOME ?? process.cwd() });
 });
 
 app.post("/api/load", async (req, res) => {
