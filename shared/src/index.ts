@@ -187,6 +187,7 @@ export interface ResourceView {
 export type Edit =
   | SetCardinalityEdit
   | SetBindingEdit
+  | SetMustSupportEdit
   | AddSliceEdit
   | AddExtensionEdit;
 
@@ -205,6 +206,14 @@ export interface SetBindingEdit {
   path: string;
   valueSet: string;
   strength: NonNullable<ElementBinding["strength"]>;
+}
+
+/** Set or clear the Must Support flag on an element. */
+export interface SetMustSupportEdit {
+  kind: "setMustSupport";
+  artifactId: string;
+  path: string;
+  value: boolean;
 }
 
 /** Add a named slice to a (repeating) element. */

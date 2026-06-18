@@ -161,6 +161,14 @@ export const xmlAdapter: Adapter = {
         working = ensureElement(working, edit.path);
         working = ensureBinding(working, edit.path, edit.valueSet, edit.strength);
         descs.push(`${edit.path} binding → ${edit.valueSet} (${edit.strength})`);
+      } else if (edit.kind === "setMustSupport") {
+        if (edit.value) {
+          working = ensureElement(working, edit.path);
+          working = setElementLeaf(working, edit.path, "mustSupport", "true");
+        } else {
+          working = removeElementLeaf(working, edit.path, "mustSupport");
+        }
+        descs.push(`${edit.path} mustSupport → ${edit.value}`);
       } else if (edit.kind === "addSlice") {
         working = ensureElement(working, edit.path);
         if (edit.discriminator) working = ensureSlicing(working, edit.path, edit.discriminator);
@@ -328,6 +336,19 @@ function setElementLeaf(text: string, path: string, name: string, value: string)
   const el = diff && findElement(diff, path);
   if (!el) return text;
   return setLeaf(text, el, name, value, ELEMENT_ORDER);
+}
+
+/** Remove a leaf child (e.g. <mustSupport/>) from a differential element. */
+function removeElementLeaf(text: string, path: string, name: string): string {
+  const root = findRoot(text);
+  const diff = root && findDifferential(root);
+  const el = diff && findElement(diff, path);
+  const leaf = el && child(el, name);
+  if (!leaf) return text;
+  // Remove the whole line, including the preceding newline + indentation.
+  const lineStart = text.lastIndexOf("\n", leaf.tagStart);
+  const from = lineStart === -1 ? leaf.tagStart : lineStart;
+  return splice(text, from, leaf.closeTagEnd, "");
 }
 
 /** Ensure a differential element for `path` exists; create a minimal one if not. */

@@ -33,6 +33,7 @@ const ENTITY_KEYWORDS = [
 
 const ENTITY_RE = new RegExp(`^(${ENTITY_KEYWORDS.join("|")})\\s*:\\s*(.*)$`);
 const CARD_RE = /\b(\d+)\.\.(\d+|\*)/;
+const MS_RE = /\bMS\b/;
 const STRENGTHS = ["required", "extensible", "preferred", "example"] as const;
 
 interface Span {
@@ -329,6 +330,7 @@ export const fshAdapter: Adapter = {
           strength: rule.binding.strength,
         };
       }
+      if (/\bMS\b/.test(rule.rest)) row.mustSupport = true;
     }
 
     return {
@@ -417,6 +419,39 @@ function computeRuleChange(
     }
     return appendRule(profile, `* ${relPath} from ${edit.valueSet} (${edit.strength})`,
       edit.path, `binding → ${edit.valueSet} (${edit.strength})`);
+  }
+
+  if (edit.kind === "setMustSupport") {
+    const rules = rulesForPath.filter((r) => !r.contains);
+    const msRule = rules.find((r) => MS_RE.test(r.rest));
+    if (edit.value) {
+      if (msRule) return null; // already MS
+      // Prefer the cardinality rule; avoid appending onto a `from` binding rule.
+      const target = rules.find((r) => r.card) ?? rules.find((r) => !r.binding);
+      if (target) {
+        return {
+          start: target.lineEnd,
+          end: target.lineEnd,
+          newText: " MS",
+          description: `${edit.path} mustSupport → true`,
+        };
+      }
+      return appendRule(profile, `* ${relPath} MS`, edit.path, "mustSupport → true");
+    }
+    // Clearing MS: delete the flag token (with a surrounding space) from its rule.
+    if (!msRule) return null;
+    const m = MS_RE.exec(msRule.rest);
+    if (!m) return null;
+    const tokenStart = msRule.pathSpan.end + m.index;
+    // Remove a single adjacent space along with the token.
+    const before = msRule.pathSpan.end + m.index - 1;
+    const removeStart = m.index > 0 ? before : tokenStart;
+    return {
+      start: removeStart,
+      end: tokenStart + 2,
+      newText: "",
+      description: `${edit.path} mustSupport → false`,
+    };
   }
 
   if (edit.kind === "addSlice") {

@@ -22,7 +22,8 @@
         "path": "Patient.gender",
         "short": "Administrative gender",
         "min": 1,
-        "max": "*"
+        "max": "*",
+        "mustSupport": true
       }
     ]
   }

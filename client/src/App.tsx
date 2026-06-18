@@ -272,7 +272,8 @@ function ProfileEditor({
       <table>
         <thead>
           <tr>
-            <th style={{ width: "38%" }}>Path</th>
+            <th style={{ width: "36%" }}>Path</th>
+            <th style={{ width: "52px" }}>MS</th>
             <th style={{ width: "14%" }}>Card.</th>
             <th>Binding</th>
             <th style={{ width: "70px" }}></th>
@@ -427,13 +428,17 @@ function ElementRow({
   const pendingBind = pending.find(
     (e) => e.kind === "setBinding" && e.path === editKey,
   ) as Extract<Edit, { kind: "setBinding" }> | undefined;
+  const pendingMS = pending.find(
+    (e) => e.kind === "setMustSupport" && e.path === editKey,
+  ) as Extract<Edit, { kind: "setMustSupport" }> | undefined;
 
   const min = pendingCard?.min ?? el.min ?? 0;
   const max = pendingCard?.max ?? el.max ?? "*";
   const vs = pendingBind?.valueSet ?? el.binding?.valueSet ?? "";
   const strength = pendingBind?.strength ?? el.binding?.strength ?? "required";
+  const mustSupport = pendingMS?.value ?? el.mustSupport ?? false;
 
-  const dirty = !!pendingCard || !!pendingBind;
+  const dirty = !!pendingCard || !!pendingBind || !!pendingMS;
   const isSlice = !!el.sliceName;
   const isExtension = el.path.endsWith(".extension");
   // Only repeating-or-sliceable elements get a slice action; keep it simple by
@@ -457,10 +462,26 @@ function ElementRow({
               {el.slicing && <span className="badge slicing">sliced</span>}
             </>
           )}
-          {el.mustSupport && <span className="flag">MS</span>}
           {el.types && el.types.length > 0 && !isExtension && (
             <span className="flag">{el.types.join(" | ")}</span>
           )}
+        </td>
+        <td className="ms-cell">
+          <label className={"ms-toggle" + (mustSupport ? " on" : "")}>
+            <input
+              type="checkbox"
+              checked={mustSupport}
+              onChange={(e) =>
+                onEdit({
+                  kind: "setMustSupport",
+                  artifactId,
+                  path: editKey,
+                  value: e.target.checked,
+                })
+              }
+            />
+            MS
+          </label>
         </td>
         <td>
         <div className="card-edit">
@@ -536,7 +557,7 @@ function ElementRow({
     </tr>
       {addingSlice && (
         <tr className="form-row">
-          <td colSpan={4}>
+          <td colSpan={5}>
             <AddSliceForm
               artifactId={artifactId}
               path={el.path}

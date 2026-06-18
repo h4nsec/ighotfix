@@ -193,6 +193,23 @@ export const jsonAdapter: Adapter = {
           mods.push({ path: ["differential", "element", idx, "binding"], value: bindingValue });
         }
         description = `${edit.path} binding → ${edit.valueSet} (${edit.strength})`;
+      } else if (edit.kind === "setMustSupport") {
+        if (edit.value) {
+          if (idx === undefined) {
+            const at = differentialLength(root);
+            mods.push({
+              path: ["differential", "element", at],
+              value: { id: edit.path, path: edit.path, mustSupport: true },
+              insert: true,
+            });
+          } else {
+            mods.push({ path: ["differential", "element", idx, "mustSupport"], value: true });
+          }
+        } else if (idx !== undefined) {
+          // Clearing mustSupport removes the property (FHIR omits false).
+          mods.push({ path: ["differential", "element", idx, "mustSupport"], value: undefined });
+        }
+        description = `${edit.path} mustSupport → ${edit.value}`;
       } else if (edit.kind === "addSlice") {
         const baseIdx = findBaseElementIndex(root, edit.path);
         if (baseIdx !== undefined && !hasSlicing(root, baseIdx)) {
