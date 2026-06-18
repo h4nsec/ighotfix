@@ -120,11 +120,23 @@ app.get("/api/git/diff", async (req, res) => {
   res.json({ diff: await gitOps.diff(root, req.query.file ? String(req.query.file) : undefined) });
 });
 
+app.post("/api/git/clone", async (req, res) => {
+  // Clone does not require a loaded IG — it is how you obtain one.
+  const { url, parent } = req.body ?? {};
+  if (!url || !parent) return res.status(400).json({ error: "url and parent are required" });
+  try {
+    res.json(await gitOps.clone(String(url), path.resolve(String(parent))));
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 app.post("/api/git/:action", async (req, res) => {
   const root = requireRoot(res);
   if (!root) return;
   const { action } = req.params;
   const body = req.body ?? {};
+  const paths: string[] = Array.isArray(body.paths) ? body.paths.map(String) : [];
   try {
     switch (action) {
       case "init":
@@ -135,10 +147,14 @@ app.post("/api/git/:action", async (req, res) => {
         return res.json(await gitOps.createBranch(root, String(body.name ?? ""), !!body.checkout));
       case "checkout":
         return res.json(await gitOps.checkout(root, String(body.name ?? "")));
-      case "push":
-        return res.json(await gitOps.push(root));
-      case "pull":
-        return res.json(await gitOps.pull(root));
+      case "stage":
+        return res.json(await gitOps.stage(root, paths));
+      case "unstage":
+        return res.json(await gitOps.unstage(root, paths));
+      case "stageAll":
+        return res.json(await gitOps.stageAll(root));
+      case "unstageAll":
+        return res.json(await gitOps.unstageAll(root));
       default:
         return res.status(404).json({ error: `unknown git action: ${action}` });
     }

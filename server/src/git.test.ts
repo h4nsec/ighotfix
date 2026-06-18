@@ -34,7 +34,21 @@ describe("git module", () => {
     expect(st.clean).toBe(false);
     expect(st.files?.[0].path).toBe("MyPatient.json");
     expect(st.files?.[0].label).toBe("untracked");
+    expect(st.files?.[0].staged).toBe(false);
 
+    // Commit only commits staged content; nothing is staged yet.
+    expect((await git.commit(dir, "nope")).ok).toBe(false);
+
+    // Stage the file, then it shows as staged.
+    expect((await git.stage(dir, ["MyPatient.json"])).ok).toBe(true);
+    st = await git.status(dir);
+    expect(st.files?.[0].staged).toBe(true);
+
+    // Unstage and re-check, then stage again and commit.
+    expect((await git.unstage(dir, ["MyPatient.json"])).ok).toBe(true);
+    expect((await git.status(dir)).files?.[0].staged).toBe(false);
+
+    await git.stageAll(dir);
     const c = await git.commit(dir, "Initial import");
     expect(c.ok).toBe(true);
 

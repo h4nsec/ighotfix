@@ -16,6 +16,7 @@ import { SearchParameterEditor } from "./SearchParameterEditor.js";
 import { CapabilityStatementEditor } from "./CapabilityStatementEditor.js";
 import { NewArtifactDialog } from "./NewArtifactDialog.js";
 import { GitPanel } from "./GitPanel.js";
+import { CloneDialog } from "./CloneDialog.js";
 
 const DEFAULT_ROOT = "C:/Users/User/Documents/IG Builder/fixtures/sample-ig";
 
@@ -41,6 +42,7 @@ export function App() {
   const [picking, setPicking] = useState(false);
   const [creating, setCreating] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
+  const [cloning, setCloning] = useState(false);
   const [git, setGit] = useState<GitStatus | null>(null);
   const [filter, setFilter] = useState("");
 
@@ -140,6 +142,9 @@ export function App() {
         <button onClick={() => setPicking(true)} disabled={busy}>
           Browse…
         </button>
+        <button onClick={() => setCloning(true)} disabled={busy} title="Clone a git repository">
+          Clone…
+        </button>
         <button className="primary" onClick={() => doLoad()} disabled={busy}>
           Load IG
         </button>
@@ -192,6 +197,17 @@ export function App() {
       )}
 
       {gitOpen && <GitPanel onClose={() => setGitOpen(false)} onChanged={refreshGit} />}
+
+      {cloning && (
+        <CloneDialog
+          onClose={() => setCloning(false)}
+          onCloned={(p) => {
+            setCloning(false);
+            setRoot(p);
+            doLoad(p);
+          }}
+        />
+      )}
 
       {error && <div className="error">{error}</div>}
 

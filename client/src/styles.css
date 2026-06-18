@@ -520,19 +520,40 @@ td.slice-row { padding-left: 22px; }
 .git-code.staged { color: var(--good); }
 .git-file-path { flex: 1; word-break: break-all; }
 .git-file-label { color: var(--muted); font-size: 11px; }
-.git-diff {
-  background: var(--bg);
+.git-changes-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.git-stage-all { display: flex; gap: 6px; }
+.git-stage-all button { font-size: 11px; padding: 2px 8px; }
+.git-file input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+.git-file-path { cursor: pointer; }
+.git-file-path:hover { color: var(--accent); }
+
+.git-diff-wrap {
+  margin: 4px 0 6px 24px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 8px 10px;
+  overflow: hidden;
+}
+.diff-view {
+  margin: 0;
+  background: var(--bg);
   font-family: var(--mono);
   font-size: 11px;
-  white-space: pre;
+  line-height: 1.45;
   overflow-x: auto;
-  margin: 4px 0 4px 24px;
-  max-height: 240px;
+  max-height: 280px;
   overflow-y: auto;
+  white-space: pre;
 }
+.diff-line { display: block; padding: 0 10px; }
+.diff-add { background: rgba(74, 208, 138, 0.13); color: #8ce0b0; }
+.diff-del { background: rgba(255, 122, 122, 0.13); color: #ff9d9d; }
+.diff-hunk { color: var(--accent); background: rgba(74, 163, 255, 0.08); }
+.diff-file { color: var(--muted); }
+.diff-ctx { color: var(--text); }
 .git-log { display: flex; flex-direction: column; gap: 2px; }
 .git-commit {
   display: flex;

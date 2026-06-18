@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { existsSync } from "node:fs";
+import path from "node:path";
 
 const execFileP = promisify(execFile);
 
@@ -205,9 +207,30 @@ const VALID_BRANCH = /^[A-Za-z0-9._/-]+$/;
 
 export async function commit(root: string, message: string): Promise<GitOpResult> {
   if (!message.trim()) return { ok: false, output: "Commit message is required." };
-  const add = await git(root, ["add", "-A"]);
-  if (add.code !== 0) return ok(add);
+  // Commit whatever is currently staged (selective staging is done separately).
   return ok(await git(root, ["commit", "-m", message]));
+}
+
+export async function stage(root: string, paths: string[]): Promise<GitOpResult> {
+  if (paths.length === 0) return { ok: true, output: "" };
+  return ok(await git(root, ["add", "--", ...paths]));
+}
+
+export async function unstage(root: string, paths: string[]): Promise<GitOpResult> {
+  if (paths.length === 0) return { ok: true, output: "" };
+  // `restore --staged` needs a commit; fall back to removing from the index.
+  const r = await git(root, ["restore", "--staged", "--", ...paths]);
+  if (r.code === 0) return ok(r);
+  return ok(await git(root, ["rm", "--cached", "-q", "--", ...paths]));
+}
+
+export async function stageAll(root: string): Promise<GitOpResult> {
+  return ok(await git(root, ["add", "-A"]));
+}
+
+export async function unstageAll(root: string): Promise<GitOpResult> {
+  const r = await git(root, ["reset", "-q"]);
+  return ok(r);
 }
 
 export async function createBranch(
@@ -224,10 +247,29 @@ export async function checkout(root: string, name: string): Promise<GitOpResult>
   return ok(await git(root, ["checkout", name]));
 }
 
-export async function push(root: string): Promise<GitOpResult> {
-  return ok(await git(root, ["push"], 60_000));
+/** Derive a repo folder name from a clone URL. */
+function repoNameFromUrl(url: string): string {
+  const cleaned = url.trim().replace(/\.git$/i, "").replace(/\/+$/, "");
+  const seg = cleaned.split(/[/:]/).pop() ?? "repo";
+  return seg.replace(/[^A-Za-z0-9._-]/g, "-") || "repo";
 }
 
-export async function pull(root: string): Promise<GitOpResult> {
-  return ok(await git(root, ["pull", "--ff-only"], 60_000));
+export interface CloneResult extends GitOpResult {
+  /** Absolute path of the cloned working tree, when successful. */
+  path?: string;
+}
+
+/**
+ * Clone `url` into `parentDir`. Read-only network fetch; prompts are disabled so
+ * a private repo fails cleanly instead of hanging.
+ */
+export async function clone(url: string, parentDir: string): Promise<CloneResult> {
+  if (!url.trim()) return { ok: false, output: "A repository URL is required." };
+  const name = repoNameFromUrl(url);
+  const target = path.join(parentDir, name);
+  if (existsSync(target)) {
+    return { ok: false, output: `Destination already exists: ${target}` };
+  }
+  const r = await git(parentDir, ["clone", "--", url.trim(), name], 180_000);
+  return { ok: r.code === 0, output: (r.stdout + "\n" + r.stderr).trim(), path: r.code === 0 ? target : undefined };
 }

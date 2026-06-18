@@ -7,12 +7,15 @@ import {
   gitDiff,
   gitInit,
   gitLog,
-  gitPull,
-  gitPush,
+  gitStage,
+  gitStageAll,
   gitStatus,
+  gitUnstage,
+  gitUnstageAll,
   type GitCommit,
   type GitStatus,
 } from "./api.js";
+import { DiffView } from "./DiffView.js";
 
 export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const [status, setStatus] = useState<GitStatus | null>(null);
@@ -57,8 +60,10 @@ export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChange
   async function showDiff(file: string) {
     if (diffText?.file === file) return setDiffText(null);
     const { diff } = await gitDiff(file);
-    setDiffText({ file, text: diff || "(no diff vs HEAD — new or staged file)" });
+    setDiffText({ file, text: diff || "(no textual diff vs HEAD — new, binary, or staged file)" });
   }
+
+  const stagedCount = status?.files?.filter((f) => f.staged).length ?? 0;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -137,8 +142,20 @@ export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChange
 
             {/* Changes */}
             <div className="git-section">
-              <div className="group-label">
-                Changes ({status.files?.length ?? 0})
+              <div className="git-changes-head">
+                <div className="group-label">
+                  Changes ({status.files?.length ?? 0}) · {stagedCount} staged
+                </div>
+                {!status.clean && (
+                  <div className="git-stage-all">
+                    <button disabled={busy} onClick={() => run(() => gitStageAll())}>
+                      Stage all
+                    </button>
+                    <button disabled={busy || stagedCount === 0} onClick={() => run(() => gitUnstageAll())}>
+                      Unstage all
+                    </button>
+                  </div>
+                )}
               </div>
               {status.clean ? (
                 <div className="muted small">Working tree clean.</div>
@@ -146,12 +163,27 @@ export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChange
                 <div className="git-files">
                   {status.files!.map((f) => (
                     <div key={f.path}>
-                      <div className="git-file" onClick={() => showDiff(f.path)}>
+                      <div className="git-file">
+                        <input
+                          type="checkbox"
+                          checked={f.staged}
+                          disabled={busy}
+                          title={f.staged ? "Unstage" : "Stage"}
+                          onChange={() =>
+                            run(() => (f.staged ? gitUnstage([f.path]) : gitStage([f.path])))
+                          }
+                        />
                         <span className={"git-code " + (f.staged ? "staged" : "")}>{f.code}</span>
-                        <span className="git-file-path">{f.path}</span>
+                        <span className="git-file-path" onClick={() => showDiff(f.path)}>
+                          {f.path}
+                        </span>
                         <span className="git-file-label">{f.label}</span>
                       </div>
-                      {diffText?.file === f.path && <pre className="git-diff">{diffText.text}</pre>}
+                      {diffText?.file === f.path && (
+                        <div className="git-diff-wrap">
+                          <DiffView text={diffText.text} />
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -160,7 +192,7 @@ export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChange
 
             {/* Commit */}
             <div className="git-section">
-              <div className="group-label">Commit all changes</div>
+              <div className="group-label">Commit staged changes</div>
               <textarea
                 rows={2}
                 placeholder="Commit message…"
@@ -170,20 +202,13 @@ export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChange
               <div className="git-actions">
                 <button
                   className="primary"
-                  disabled={busy || status.clean || !message.trim()}
+                  disabled={busy || stagedCount === 0 || !message.trim()}
                   onClick={() => run(() => gitCommit(message), () => setMessage(""))}
                 >
-                  Commit
+                  Commit {stagedCount > 0 ? `(${stagedCount})` : ""}
                 </button>
-                {status.hasRemote && (
-                  <>
-                    <button disabled={busy} onClick={() => run(gitPull)}>
-                      Pull
-                    </button>
-                    <button disabled={busy} onClick={() => run(gitPush)}>
-                      Push
-                    </button>
-                  </>
+                {stagedCount === 0 && !status.clean && (
+                  <span className="muted small">Stage files to commit.</span>
                 )}
               </div>
             </div>

@@ -107,8 +107,12 @@ export const gitCommit = (message: string) => jpost<GitOpResult>("/api/git/commi
 export const gitCreateBranch = (name: string, checkout: boolean) =>
   jpost<GitOpResult>("/api/git/branch", { name, checkout });
 export const gitCheckout = (name: string) => jpost<GitOpResult>("/api/git/checkout", { name });
-export const gitPush = () => jpost<GitOpResult>("/api/git/push", {});
-export const gitPull = () => jpost<GitOpResult>("/api/git/pull", {});
+export const gitStage = (paths: string[]) => jpost<GitOpResult>("/api/git/stage", { paths });
+export const gitUnstage = (paths: string[]) => jpost<GitOpResult>("/api/git/unstage", { paths });
+export const gitStageAll = () => jpost<GitOpResult>("/api/git/stageAll", {});
+export const gitUnstageAll = () => jpost<GitOpResult>("/api/git/unstageAll", {});
+export const gitClone = (url: string, parent: string) =>
+  jpost<GitOpResult & { path?: string }>("/api/git/clone", { url, parent });
 
 export async function getProfile(artifactId: string): Promise<ProfileView> {
   const res = await fetch(`/api/profile?artifactId=${encodeURIComponent(artifactId)}`);
