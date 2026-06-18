@@ -27,6 +27,10 @@
       <searchParam>
         <name value="identifier"/>
         <type value="token"/>
+        <extension url="http://hl7.org/fhir/StructureDefinition/capabilitystatement-expectation">
+          <valueCode value="SHALL"/>
+        </extension>
+        <documentation value="Server SHALL support identifier search"/>
       </searchParam>
       <searchParam>
         <name value="birthdate"/>

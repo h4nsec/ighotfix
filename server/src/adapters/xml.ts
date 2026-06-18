@@ -268,13 +268,26 @@ function setValueAtPath(text: string, path: string, value: unknown): string {
   return splice(text, at, at, block);
 }
 
+/** Keys that are XML attributes in FHIR (not child elements). */
+const XML_ATTR_KEYS = new Set(["url", "id"]);
+
 /** Build XML for an added array item (primitive leaf or nested object). */
 function objectToXml(name: string, value: unknown, indent: string): string {
   if (value === null || value === undefined || typeof value !== "object") {
     return `${indent}<${name} value="${primitiveStr(value)}"/>`;
   }
-  const lines = [`${indent}<${name}>`];
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+  const entries = Object.entries(value as Record<string, unknown>);
+  // FHIR XML carries url/id (and primitive `value`) as attributes on the tag.
+  const attrs = entries
+    .filter(([k, v]) => (XML_ATTR_KEYS.has(k) || k === "value") && typeof v !== "object")
+    .map(([k, v]) => ` ${k}="${primitiveStr(v)}"`)
+    .join("");
+  const childEntries = entries.filter(
+    ([k, v]) => !((XML_ATTR_KEYS.has(k) || k === "value") && typeof v !== "object"),
+  );
+  if (childEntries.length === 0) return `${indent}<${name}${attrs}/>`;
+  const lines = [`${indent}<${name}${attrs}>`];
+  for (const [k, v] of childEntries) {
     if (Array.isArray(v)) for (const item of v) lines.push(objectToXml(k, item, indent + "  "));
     else lines.push(objectToXml(k, v, indent + "  "));
   }

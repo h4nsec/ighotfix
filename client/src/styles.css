@@ -190,6 +190,42 @@ table.kv.form textarea { width: 640px; resize: vertical; line-height: 1.5; }
   margin: 10px 0 5px;
 }
 
+table.sp-table { width: 100%; }
+table.sp-table th { font-size: 10px; }
+table.sp-table td { padding: 4px 8px; }
+table.sp-table input,
+table.sp-table select {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  width: 100%;
+  min-width: 0;
+}
+table.sp-table input.sm { max-width: 110px; }
+.sp-table .muted-cell { color: var(--muted); font-style: italic; }
+.chip-x {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.chip-x:hover { color: #ff7a7a; background: transparent; }
+.sp-add { margin-top: 6px; }
+.sp-add input {
+  background: var(--panel-2);
+  border: 1px dashed var(--border);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  width: 240px;
+}
+
 .chip-add input {
   background: var(--panel-2);
   border: 1px dashed var(--border);

@@ -18,6 +18,19 @@ function arr<T = any>(v: unknown): T[] {
   return Array.isArray(v) ? v : v === undefined || v === null ? [] : [v as T];
 }
 
+const EXPECTATION_URL =
+  "http://hl7.org/fhir/StructureDefinition/capabilitystatement-expectation";
+const CONFORMANCE = ["SHALL", "SHOULD", "MAY", "SHOULD-NOT"];
+
+/** Index of the conformance (expectation) extension within an element's extensions. */
+function expectationIndex(el: any): number {
+  return arr(el?.extension).findIndex((x: any) => x?.url === EXPECTATION_URL);
+}
+function expectationValue(el: any): string {
+  const e = arr(el?.extension).find((x: any) => x?.url === EXPECTATION_URL);
+  return e?.valueCode ?? "";
+}
+
 /** Structured editor for a CapabilityStatement's REST resource matrix. */
 export function CapabilityStatementEditor({
   view,
@@ -228,63 +241,122 @@ function SearchParamEditor({
 }) {
   const [draft, setDraft] = useState("");
   const path = `${base}.searchParam`;
-  const removed = new Set(
+  const removedIdx = new Set(
     pending
-      .filter((e) => e.kind === "removeValue" && e.path.startsWith(`${path}[`))
-      .map((e) => Number((e as any).path.slice(`${path}[`.length, -1))),
+      .filter((e) => e.kind === "removeValue" && e.path.startsWith(`${path}[`) && /\]$/.test((e as any).path))
+      .map((e) => Number((e as any).path.slice(`${path}[`.length, -1)))
+      .filter((n) => !Number.isNaN(n)),
   );
   const added = pending
     .filter((e) => e.kind === "addValue" && e.path === path)
     .map((e) => (e as any).value?.name);
 
+  // Effective value of a scalar at a searchParam sub-path, pending-aware.
+  const valueOf = (p: string, b: unknown): string => {
+    const pe = [...pending].reverse().find(
+      (e) => (e.kind === "setValue" || e.kind === "removeValue") && e.path === p,
+    );
+    if (pe?.kind === "removeValue") return "";
+    if (pe?.kind === "setValue") return pe.value === null ? "" : String(pe.value);
+    return b === undefined || b === null ? "" : String(b);
+  };
+
+  const setConformance = (sp: any, i: number, level: string) => {
+    const ei = expectationIndex(sp);
+    if (!level) {
+      if (ei >= 0)
+        onEdit({ kind: "removeValue", artifactId, path: `${path}[${i}].extension[${ei}]`, description: `${resType} ${sp.name} conformance cleared` });
+      return;
+    }
+    if (ei >= 0) {
+      onEdit({ kind: "setValue", artifactId, path: `${path}[${i}].extension[${ei}].valueCode`, value: level, description: `${resType} ${sp.name} → ${level}` });
+    } else {
+      onEdit({ kind: "addValue", artifactId, path: `${path}[${i}].extension`, value: { url: EXPECTATION_URL, valueCode: level }, description: `${resType} ${sp.name} → ${level}` });
+    }
+  };
+
   return (
     <>
       <div className="cs-label">Search params</div>
-      <div className="chip-list">
-        {items.map((sp, i) =>
-          removed.has(i) ? null : (
-            <span key={i} className="chip">
-              {sp.name}
-              <button
-                title="Remove"
-                onClick={() =>
-                  onEdit({
-                    kind: "removeValue",
-                    artifactId,
-                    path: `${path}[${i}]`,
-                    description: `${resType} − search ${sp.name}`,
-                  })
-                }
-              >
-                ✕
-              </button>
-            </span>
-          ),
-        )}
-        {added.map((nm, i) => (
-          <span key={"n" + i} className="chip new">
-            {nm}
-          </span>
-        ))}
-        <span className="chip-add">
-          <input
-            value={draft}
-            placeholder="search param name"
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && draft.trim()) {
-                onEdit({
-                  kind: "addValue",
-                  artifactId,
-                  path,
-                  value: { name: draft.trim() },
-                  description: `${resType} + search ${draft.trim()}`,
-                });
-                setDraft("");
-              }
-            }}
-          />
-        </span>
+      <table className="sp-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Conformance</th>
+            <th>Documentation</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((sp, i) =>
+            removedIdx.has(i) ? null : (
+              <tr key={i}>
+                <td className="path">{sp.name}</td>
+                <td>
+                  <input
+                    className="sm"
+                    value={valueOf(`${path}[${i}].type`, sp.type)}
+                    placeholder="token…"
+                    onChange={(e) =>
+                      onEdit({ kind: "setValue", artifactId, path: `${path}[${i}].type`, value: e.target.value, description: `${sp.name} type` })
+                    }
+                  />
+                </td>
+                <td>
+                  <select
+                    value={expectationValue(sp)}
+                    onChange={(e) => setConformance(sp, i, e.target.value)}
+                  >
+                    <option value="">—</option>
+                    {CONFORMANCE.map((c) => (
+                      <option key={c}>{c}</option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  <input
+                    value={valueOf(`${path}[${i}].documentation`, sp.documentation)}
+                    placeholder="documentation…"
+                    onChange={(e) =>
+                      onEdit({ kind: "setValue", artifactId, path: `${path}[${i}].documentation`, value: e.target.value, description: `${sp.name} documentation` })
+                    }
+                  />
+                </td>
+                <td>
+                  <button
+                    className="chip-x"
+                    title="Remove"
+                    onClick={() =>
+                      onEdit({ kind: "removeValue", artifactId, path: `${path}[${i}]`, description: `${resType} − search ${sp.name}` })
+                    }
+                  >
+                    ✕
+                  </button>
+                </td>
+              </tr>
+            ),
+          )}
+          {added.map((nm, i) => (
+            <tr key={"n" + i} className="dirty">
+              <td className="path">{nm}</td>
+              <td colSpan={4} className="muted-cell">added — edit after saving</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="sp-add">
+        <input
+          value={draft}
+          placeholder="add search param name…"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && draft.trim()) {
+              onEdit({ kind: "addValue", artifactId, path, value: { name: draft.trim() }, description: `${resType} + search ${draft.trim()}` });
+              setDraft("");
+            }
+          }}
+        />
       </div>
     </>
   );

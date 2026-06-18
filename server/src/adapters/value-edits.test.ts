@@ -155,6 +155,21 @@ describe("deep-path nested edits (CapabilityStatement shape)", () => {
     expect(out).toContain('<profile value="http://x/p"/>');
   });
 
+  it("xml: adds an extension with url as an attribute (not a child)", () => {
+    const out = applyChanges(
+      XML_CS,
+      xmlAdapter.computeChanges(src("xml", XML_CS), [
+        addV("rest[0].resource[0].interaction[0].extension", {
+          url: "http://hl7.org/fhir/StructureDefinition/capabilitystatement-expectation",
+          valueCode: "SHALL",
+        }),
+      ]),
+    );
+    expect(out).toContain('<extension url="http://hl7.org/fhir/StructureDefinition/capabilitystatement-expectation">');
+    expect(out).toContain('<valueCode value="SHALL"/>');
+    expect(out).not.toContain("<url value=");
+  });
+
   it("json: adds and removes nested interactions", () => {
     const added = applyChanges(
       JSON_CS,
