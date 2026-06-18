@@ -168,6 +168,28 @@ table.kv.form textarea { width: 640px; resize: vertical; line-height: 1.5; }
   cursor: pointer;
 }
 .chip button:hover { color: #ff7a7a; background: transparent; }
+.flag-toggles.wrap { flex-wrap: wrap; }
+.cs-resource {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 10px 0;
+  background: var(--panel);
+}
+.cs-resource-type {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.cs-label {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 10px 0 5px;
+}
+
 .chip-add input {
   background: var(--panel-2);
   border: 1px dashed var(--border);

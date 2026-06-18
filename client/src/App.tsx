@@ -13,6 +13,7 @@ import { applyEdits, getProfile, getResource, loadIg } from "./api.js";
 import { FolderPicker } from "./FolderPicker.js";
 import { ResourceViewer } from "./ResourceViewer.js";
 import { SearchParameterEditor } from "./SearchParameterEditor.js";
+import { CapabilityStatementEditor } from "./CapabilityStatementEditor.js";
 
 const DEFAULT_ROOT = "C:/Users/User/Documents/IG Builder/fixtures/sample-ig";
 
@@ -208,6 +209,8 @@ export function App() {
           {resource &&
             (resource.editableType && resource.resourceType === "SearchParameter" ? (
               <SearchParameterEditor view={resource} pending={pending} onEdit={queueEdit} />
+            ) : resource.editableType && resource.resourceType === "CapabilityStatement" ? (
+              <CapabilityStatementEditor view={resource} pending={pending} onEdit={queueEdit} />
             ) : (
               <ResourceViewer view={resource} />
             ))}

@@ -97,3 +97,74 @@ describe("xml generic value edits", () => {
     expect(out).toContain('<comparator value="eq"/>');
   });
 });
+
+const XML_CS = `<?xml version="1.0" encoding="UTF-8"?>
+<CapabilityStatement xmlns="http://hl7.org/fhir">
+  <status value="draft"/>
+  <rest>
+    <mode value="server"/>
+    <resource>
+      <type value="Patient"/>
+      <interaction>
+        <code value="read"/>
+      </interaction>
+    </resource>
+  </rest>
+</CapabilityStatement>
+`;
+
+const JSON_CS = `{
+  "resourceType": "CapabilityStatement",
+  "status": "draft",
+  "rest": [
+    {
+      "mode": "server",
+      "resource": [
+        { "type": "Patient", "interaction": [ { "code": "read" } ] }
+      ]
+    }
+  ]
+}
+`;
+
+describe("deep-path nested edits (CapabilityStatement shape)", () => {
+  it("xml: adds a nested interaction object", () => {
+    const out = applyChanges(
+      XML_CS,
+      xmlAdapter.computeChanges(src("xml", XML_CS), [addV("rest[0].resource[0].interaction", { code: "create" })]),
+    );
+    expect(out).toContain("<interaction>");
+    expect(out).toContain('<code value="create"/>');
+    expect((out.match(/<interaction>/g) ?? []).length).toBe(2);
+  });
+
+  it("xml: removes a nested interaction by index", () => {
+    const out = applyChanges(
+      XML_CS,
+      xmlAdapter.computeChanges(src("xml", XML_CS), [rmV("rest[0].resource[0].interaction[0]")]),
+    );
+    expect(out).not.toContain('<code value="read"/>');
+    expect(out).toContain("<type value=\"Patient\"/>");
+  });
+
+  it("xml: sets a deep scalar", () => {
+    const out = applyChanges(
+      XML_CS,
+      xmlAdapter.computeChanges(src("xml", XML_CS), [setV("rest[0].resource[0].profile", "http://x/p")]),
+    );
+    expect(out).toContain('<profile value="http://x/p"/>');
+  });
+
+  it("json: adds and removes nested interactions", () => {
+    const added = applyChanges(
+      JSON_CS,
+      jsonAdapter.computeChanges(src("json", JSON_CS), [addV("rest[0].resource[0].interaction", { code: "create" })]),
+    );
+    expect(JSON.parse(added).rest[0].resource[0].interaction.map((i: any) => i.code)).toEqual(["read", "create"]);
+    const removed = applyChanges(
+      JSON_CS,
+      jsonAdapter.computeChanges(src("json", JSON_CS), [rmV("rest[0].resource[0].interaction[0]")]),
+    );
+    expect(JSON.parse(removed).rest[0].resource[0].interaction).toEqual([]);
+  });
+});
