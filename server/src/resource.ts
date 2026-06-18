@@ -128,9 +128,13 @@ function sectionsFor(rt: string, obj: any): ResourceSection[] {
   return sections;
 }
 
+/** Resource types with a dedicated structured editor (JSON/XML sources only). */
+const EDITABLE_TYPES = new Set(["SearchParameter", "CapabilityStatement"]);
+
 export function buildResourceView(src: LoadedSource, artifact: Artifact): ResourceView {
   const obj = toObject(src) ?? {};
   const rt = artifact.resourceType;
+  const editableType = src.language !== "fsh" && EDITABLE_TYPES.has(rt);
 
   const fields = compact([
     field("URL", obj.url),
@@ -157,5 +161,7 @@ export function buildResourceView(src: LoadedSource, artifact: Artifact): Resour
     fields,
     sections: sectionsFor(rt, obj),
     raw: src.text,
+    data: obj,
+    editableType,
   };
 }

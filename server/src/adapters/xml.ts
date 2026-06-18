@@ -1,5 +1,6 @@
 import {
   classify,
+  parsePath,
   type Artifact,
   type Edit,
   type ElementView,
@@ -193,11 +194,130 @@ export const xmlAdapter: Adapter = {
           extensionProfile: edit.extensionUrl,
         });
         descs.push(`${extPath} + extension ${edit.sliceName}`);
+      } else if (edit.kind === "setValue") {
+        working = setValueAtPath(working, edit.path, edit.value);
+        descs.push(edit.description ?? `${edit.path} = ${edit.value}`);
+      } else if (edit.kind === "addValue") {
+        working = addValueAtPath(working, edit.path, edit.value);
+        descs.push(edit.description ?? `${edit.path} + item`);
+      } else if (edit.kind === "removeValue") {
+        working = removeValueAtPath(working, edit.path);
+        descs.push(edit.description ?? `remove ${edit.path}`);
       }
     }
     return collapseToOriginal(src.text, working, descs);
   },
 };
+
+/* ---------------- generic path-addressed edits ---------------- */
+
+function resourceRoot(text: string): XmlElement | undefined {
+  const roots = scanXml(text);
+  return roots.find((e) => localName(e.name) !== "?xml") ?? roots[0];
+}
+
+/** Walk (name, optional index) pairs from a starting element. */
+function walkPath(start: XmlElement, segs: (string | number)[]): XmlElement | undefined {
+  let cur: XmlElement | undefined = start;
+  let i = 0;
+  while (i < segs.length && cur) {
+    const name = segs[i++] as string;
+    const kids = children(cur, name);
+    let idx = 0;
+    if (typeof segs[i] === "number") {
+      idx = segs[i] as number;
+      i++;
+    }
+    cur = kids[idx];
+  }
+  return cur;
+}
+
+function primitiveStr(v: unknown): string {
+  return escapeXmlAttr(typeof v === "string" ? v : String(v));
+}
+
+/** Replace (or add) the `value` attribute on an element. */
+function setValueAttr(text: string, el: XmlElement, value: unknown): string {
+  const v = el.attrs.find((a) => a.name === "value");
+  if (v) return splice(text, v.valueStart, v.valueEnd, primitiveStr(value));
+  // No value attribute yet — insert one just before the tag's `>` or `/>`.
+  const insertAt = el.selfClosing ? el.openTagEnd - 2 : el.openTagEnd - 1;
+  return splice(text, insertAt, insertAt, ` value="${primitiveStr(value)}"`);
+}
+
+function setValueAtPath(text: string, path: string, value: unknown): string {
+  if (value === null) return removeValueAtPath(text, path);
+  const root = resourceRoot(text);
+  if (!root) return text;
+  const segs = parsePath(path);
+  const last = segs[segs.length - 1];
+  if (typeof last === "number") {
+    const el = walkPath(root, segs);
+    return el ? setValueAttr(text, el, value) : text;
+  }
+  const parent = walkPath(root, segs.slice(0, -1));
+  if (!parent) return text;
+  const existing = child(parent, last);
+  if (existing) return setValueAttr(text, existing, value);
+  // Append a new leaf at the end of the parent's children.
+  const indent = childIndent(text, parent);
+  const block = `\n${indent}<${last} value="${primitiveStr(value)}"/>`;
+  const els = parent.children;
+  const at = els.length ? els[els.length - 1].closeTagEnd : parent.openTagEnd;
+  return splice(text, at, at, block);
+}
+
+/** Build XML for an added array item (primitive leaf or nested object). */
+function objectToXml(name: string, value: unknown, indent: string): string {
+  if (value === null || value === undefined || typeof value !== "object") {
+    return `${indent}<${name} value="${primitiveStr(value)}"/>`;
+  }
+  const lines = [`${indent}<${name}>`];
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (Array.isArray(v)) for (const item of v) lines.push(objectToXml(k, item, indent + "  "));
+    else lines.push(objectToXml(k, v, indent + "  "));
+  }
+  lines.push(`${indent}</${name}>`);
+  return lines.join("\n");
+}
+
+function addValueAtPath(text: string, path: string, value: unknown): string {
+  const root = resourceRoot(text);
+  if (!root) return text;
+  const segs = parsePath(path);
+  const name = segs[segs.length - 1] as string;
+  const parent = walkPath(root, segs.slice(0, -1));
+  if (!parent || typeof name !== "string") return text;
+  const indent = childIndent(text, parent);
+  const block = "\n" + objectToXml(name, value, indent);
+  // Insert after the last existing sibling of the same name, else at end.
+  const sameName = children(parent, name);
+  const anchor = sameName.length
+    ? sameName[sameName.length - 1].closeTagEnd
+    : parent.children.length
+      ? parent.children[parent.children.length - 1].closeTagEnd
+      : parent.openTagEnd;
+  return splice(text, anchor, anchor, block);
+}
+
+function removeValueAtPath(text: string, path: string): string {
+  const root = resourceRoot(text);
+  if (!root) return text;
+  const segs = parsePath(path);
+  const last = segs[segs.length - 1];
+  const target =
+    typeof last === "number"
+      ? walkPath(root, segs)
+      : (() => {
+          const parent = walkPath(root, segs.slice(0, -1));
+          return parent && child(parent, last);
+        })();
+  if (!target) return text;
+  const lineStart = text.lastIndexOf("\n", target.tagStart);
+  const from = lineStart === -1 ? target.tagStart : lineStart;
+  return splice(text, from, target.closeTagEnd, "");
+}
 
 interface NewElement {
   id: string;

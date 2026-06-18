@@ -12,6 +12,7 @@ import { FLAG_LABELS } from "@igb/shared";
 import { applyEdits, getProfile, getResource, loadIg } from "./api.js";
 import { FolderPicker } from "./FolderPicker.js";
 import { ResourceViewer } from "./ResourceViewer.js";
+import { SearchParameterEditor } from "./SearchParameterEditor.js";
 
 const DEFAULT_ROOT = "C:/Users/User/Documents/IG Builder/fixtures/sample-ig";
 
@@ -70,13 +71,20 @@ export function App() {
   }
 
   function queueEdit(edit: Edit) {
-    // Replace any prior pending edit targeting the same thing. Flags are keyed
-    // additionally by which flag, so MS/SU/?! on one element coexist.
+    // Collapse repeated "set" edits to the same target; keep every add/remove.
+    const COLLAPSE = new Set(["setCardinality", "setBinding", "setFlag", "setValue"]);
     const sameTarget = (a: Edit, b: Edit) =>
+      COLLAPSE.has(a.kind) &&
       a.kind === b.kind &&
-      a.path === b.path &&
+      (a as any).path === (b as any).path &&
       (a.kind !== "setFlag" || a.flag === (b as typeof a).flag);
     setPending((prev) => [...prev.filter((e) => !sameTarget(e, edit)), edit]);
+  }
+
+  async function reopen(id: string) {
+    // Reload whichever view is currently showing this artifact.
+    if (resource) setResource(await getResource(id));
+    else setProfile(await getProfile(id));
   }
 
   async function save() {
@@ -85,7 +93,7 @@ export function App() {
     setError(null);
     try {
       await applyEdits(selected, pending, true);
-      setProfile(await getProfile(selected));
+      await reopen(selected);
       setPending([]);
     } catch (e) {
       setError(String(e));
@@ -197,8 +205,13 @@ export function App() {
           {profile && (
             <ProfileEditor profile={profile} pending={pending} onEdit={queueEdit} />
           )}
-          {resource && <ResourceViewer view={resource} />}
-          {profile && pending.length > 0 && (
+          {resource &&
+            (resource.editableType && resource.resourceType === "SearchParameter" ? (
+              <SearchParameterEditor view={resource} pending={pending} onEdit={queueEdit} />
+            ) : (
+              <ResourceViewer view={resource} />
+            ))}
+          {pending.length > 0 && (
             <div className="pending-bar">
               <span className="count">{pending.length} unsaved change(s)</span>
               <span className="spacer" />

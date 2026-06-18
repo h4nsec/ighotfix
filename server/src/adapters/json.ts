@@ -7,6 +7,7 @@ import {
 } from "jsonc-parser";
 import {
   classify,
+  parsePath,
   type Artifact,
   type Edit,
   type ElementView,
@@ -252,6 +253,18 @@ export const jsonAdapter: Adapter = {
           insert: true,
         });
         description = `${extPath} + extension ${edit.sliceName}`;
+      } else if (edit.kind === "setValue") {
+        mods.push({ path: parsePath(edit.path), value: edit.value === null ? undefined : edit.value });
+        description = edit.description ?? `${edit.path} = ${edit.value}`;
+      } else if (edit.kind === "addValue") {
+        const arrPath = parsePath(edit.path);
+        const node = findNodeAtLocation(root!, arrPath);
+        const at = node?.type === "array" ? (node.children?.length ?? 0) : 0;
+        mods.push({ path: [...arrPath, at], value: edit.value, insert: true });
+        description = edit.description ?? `${edit.path} + item`;
+      } else if (edit.kind === "removeValue") {
+        mods.push({ path: parsePath(edit.path), value: undefined });
+        description = edit.description ?? `remove ${edit.path}`;
       }
 
       for (const m of mods) {

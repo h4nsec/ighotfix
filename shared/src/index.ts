@@ -180,6 +180,22 @@ export interface ResourceView {
   sections: ResourceSection[];
   /** Original source text. */
   raw: string;
+  /** Normalized FHIR object (for editors to read current values by path). */
+  data?: unknown;
+  /** True when this resource type has a dedicated structured editor. */
+  editableType?: boolean;
+}
+
+/** Parse a FHIR element path ("rest[0].resource[2].code") into segments. */
+export function parsePath(path: string): (string | number)[] {
+  const out: (string | number)[] = [];
+  for (const seg of path.split(".")) {
+    const m = /^([^[]+)((?:\[\d+\])*)$/.exec(seg);
+    if (!m) continue;
+    out.push(m[1]);
+    for (const idx of m[2].matchAll(/\[(\d+)\]/g)) out.push(Number(idx[1]));
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------ *
@@ -191,7 +207,41 @@ export type Edit =
   | SetBindingEdit
   | SetFlagEdit
   | AddSliceEdit
-  | AddExtensionEdit;
+  | AddExtensionEdit
+  | SetValueEdit
+  | AddValueEdit
+  | RemoveValueEdit;
+
+/* Generic, resource-agnostic field edits, addressed by a FHIR element path
+ * (dot-separated with `[n]` array indices), e.g. "status", "base[1]",
+ * "rest[0].resource[2].interaction[1].code". */
+
+/** Set (or, when value is null, clear) a primitive at a path. */
+export interface SetValueEdit {
+  kind: "setValue";
+  artifactId: string;
+  path: string;
+  value: string | number | boolean | null;
+  description?: string;
+}
+
+/** Append an item to the array at `path`. Value may be a primitive or object. */
+export interface AddValueEdit {
+  kind: "addValue";
+  artifactId: string;
+  /** Path of the array, e.g. "base" or "rest[0].resource". */
+  path: string;
+  value: unknown;
+  description?: string;
+}
+
+/** Remove the element at `path` (a property or a specific array index). */
+export interface RemoveValueEdit {
+  kind: "removeValue";
+  artifactId: string;
+  path: string;
+  description?: string;
+}
 
 /** The editable boolean flags on an ElementDefinition. */
 export type ElementFlag = "mustSupport" | "isSummary" | "isModifier";

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SearchParameter xmlns="http://hl7.org/fhir">
+  <id value="my-search-param"/>
+  <url value="http://example.org/SearchParameter/my-search-param"/>
+  <name value="MySearchParam"/>
+  <status value="active"/>
+  <code value="patient"/>
+  <base value="Condition"/>
+  <base value="Patient"/>
+  <type value="reference"/>
+  <expression value="Observation.subject"/>
+  <target value="Patient"/>
+</SearchParameter>
