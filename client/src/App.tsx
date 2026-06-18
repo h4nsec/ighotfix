@@ -14,6 +14,7 @@ import { FolderPicker } from "./FolderPicker.js";
 import { ResourceViewer } from "./ResourceViewer.js";
 import { SearchParameterEditor } from "./SearchParameterEditor.js";
 import { CapabilityStatementEditor } from "./CapabilityStatementEditor.js";
+import { NewArtifactDialog } from "./NewArtifactDialog.js";
 
 const DEFAULT_ROOT = "C:/Users/User/Documents/IG Builder/fixtures/sample-ig";
 
@@ -37,6 +38,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ Examples: true });
 
@@ -128,6 +130,11 @@ export function App() {
         <button className="primary" onClick={() => doLoad()} disabled={busy}>
           Load IG
         </button>
+        {artifacts.length > 0 && (
+          <button onClick={() => setCreating(true)} disabled={busy} title="Create a new artifact">
+            + New
+          </button>
+        )}
       </div>
 
       {picking && (
@@ -138,6 +145,20 @@ export function App() {
             setRoot(p);
             setPicking(false);
             doLoad(p);
+          }}
+        />
+      )}
+
+      {creating && (
+        <NewArtifactDialog
+          artifacts={artifacts}
+          onClose={() => setCreating(false)}
+          onCreated={async (artifactId) => {
+            setCreating(false);
+            const summary = await loadIg(root);
+            setArtifacts(summary.artifacts);
+            const a = summary.artifacts.find((x) => x.id === artifactId);
+            if (a) await openArtifact(a);
           }}
         />
       )}

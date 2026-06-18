@@ -11,6 +11,7 @@ import type {
 import { loadIg, loadSource } from "./loader.js";
 import { browse } from "./browse.js";
 import { buildResourceView } from "./resource.js";
+import { createArtifact, type CreateRequest } from "./create.js";
 import {
   adapterForExtension,
   applyChanges,
@@ -81,6 +82,16 @@ app.get("/api/resource", async (req, res) => {
     res.json(buildResourceView(src, artifact));
   } catch (err) {
     res.status(500).json({ error: String(err) });
+  }
+});
+
+app.post("/api/create", async (req, res) => {
+  if (!currentRoot) return res.status(409).json({ error: "no IG loaded" });
+  try {
+    const result = await createArtifact(currentRoot, req.body as CreateRequest);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: String(err instanceof Error ? err.message : err) });
   }
 });
 

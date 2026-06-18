@@ -453,6 +453,42 @@ td.slice-row { padding-left: 22px; }
   white-space: nowrap;
 }
 
+.modal.small { width: 460px; }
+.new-form { padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+.new-form label {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 8px;
+}
+.new-form input {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.seg { display: flex; gap: 6px; }
+.seg button { flex: 1; }
+.seg button.on { background: var(--accent); color: #06121f; font-weight: 600; }
+.new-hint {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.new-hint code {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  word-break: break-all;
+}
+
 .picker-list { overflow-y: auto; flex: 1; padding: 6px 0; min-height: 200px; }
 .picker-row {
   display: flex;

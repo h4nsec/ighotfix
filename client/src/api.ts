@@ -46,6 +46,19 @@ export async function getHome(): Promise<string> {
   return (await res.json()).home;
 }
 
+export interface CreateArtifactRequest {
+  resourceType: "SearchParameter" | "CapabilityStatement";
+  id: string;
+  name: string;
+  language: "json" | "xml";
+  dir?: string;
+  canonicalBase?: string;
+}
+
+export function createArtifact(req: CreateArtifactRequest): Promise<{ artifactId: string }> {
+  return jpost<{ artifactId: string }>("/api/create", req);
+}
+
 export async function getProfile(artifactId: string): Promise<ProfileView> {
   const res = await fetch(`/api/profile?artifactId=${encodeURIComponent(artifactId)}`);
   if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
