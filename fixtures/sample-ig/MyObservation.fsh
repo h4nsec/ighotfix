@@ -6,7 +6,7 @@ Title: "My Observation Profile"
 Description: "Used to exercise the FSH adapter."
 
 // Core constraints
-* status 1..1 MS
+* status 1..1 MS SU
 * code 1..1
 * code from MyObservationCodes (preferred)
 * category 0..* MS

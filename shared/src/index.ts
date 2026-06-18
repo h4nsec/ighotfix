@@ -121,6 +121,8 @@ export interface ElementView {
   max?: string;
   short?: string;
   mustSupport?: boolean;
+  isSummary?: boolean;
+  isModifier?: boolean;
   types?: string[];
   binding?: ElementBinding;
   /** Set when this element defines a slice (ElementDefinition.sliceName). */
@@ -187,9 +189,19 @@ export interface ResourceView {
 export type Edit =
   | SetCardinalityEdit
   | SetBindingEdit
-  | SetMustSupportEdit
+  | SetFlagEdit
   | AddSliceEdit
   | AddExtensionEdit;
+
+/** The editable boolean flags on an ElementDefinition. */
+export type ElementFlag = "mustSupport" | "isSummary" | "isModifier";
+
+/** Display token for each flag (FHIR/FSH convention). */
+export const FLAG_LABELS: Record<ElementFlag, string> = {
+  mustSupport: "MS",
+  isSummary: "SU",
+  isModifier: "?!",
+};
 
 export interface SetCardinalityEdit {
   kind: "setCardinality";
@@ -208,11 +220,12 @@ export interface SetBindingEdit {
   strength: NonNullable<ElementBinding["strength"]>;
 }
 
-/** Set or clear the Must Support flag on an element. */
-export interface SetMustSupportEdit {
-  kind: "setMustSupport";
+/** Set or clear a boolean flag (mustSupport / isSummary / isModifier). */
+export interface SetFlagEdit {
+  kind: "setFlag";
   artifactId: string;
   path: string;
+  flag: ElementFlag;
   value: boolean;
 }
 

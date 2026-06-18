@@ -3,10 +3,12 @@ import type {
   Artifact,
   ArtifactCategory,
   Edit,
+  ElementFlag,
   ElementView,
   ProfileView,
   ResourceView,
 } from "@igb/shared";
+import { FLAG_LABELS } from "@igb/shared";
 import { applyEdits, getProfile, getResource, loadIg } from "./api.js";
 import { FolderPicker } from "./FolderPicker.js";
 import { ResourceViewer } from "./ResourceViewer.js";
@@ -68,11 +70,13 @@ export function App() {
   }
 
   function queueEdit(edit: Edit) {
-    // Replace any prior pending edit of the same kind+path.
-    setPending((prev) => [
-      ...prev.filter((e) => !(e.kind === edit.kind && e.path === edit.path)),
-      edit,
-    ]);
+    // Replace any prior pending edit targeting the same thing. Flags are keyed
+    // additionally by which flag, so MS/SU/?! on one element coexist.
+    const sameTarget = (a: Edit, b: Edit) =>
+      a.kind === b.kind &&
+      a.path === b.path &&
+      (a.kind !== "setFlag" || a.flag === (b as typeof a).flag);
+    setPending((prev) => [...prev.filter((e) => !sameTarget(e, edit)), edit]);
   }
 
   async function save() {
@@ -272,8 +276,8 @@ function ProfileEditor({
       <table>
         <thead>
           <tr>
-            <th style={{ width: "36%" }}>Path</th>
-            <th style={{ width: "52px" }}>MS</th>
+            <th style={{ width: "34%" }}>Path</th>
+            <th style={{ width: "108px" }}>Flags</th>
             <th style={{ width: "14%" }}>Card.</th>
             <th>Binding</th>
             <th style={{ width: "70px" }}></th>
@@ -428,17 +432,23 @@ function ElementRow({
   const pendingBind = pending.find(
     (e) => e.kind === "setBinding" && e.path === editKey,
   ) as Extract<Edit, { kind: "setBinding" }> | undefined;
-  const pendingMS = pending.find(
-    (e) => e.kind === "setMustSupport" && e.path === editKey,
-  ) as Extract<Edit, { kind: "setMustSupport" }> | undefined;
+  const flagEdits = pending.filter(
+    (e) => e.kind === "setFlag" && e.path === editKey,
+  ) as Extract<Edit, { kind: "setFlag" }>[];
+  const flagValue = (flag: ElementFlag, base: boolean | undefined): boolean =>
+    flagEdits.find((e) => e.flag === flag)?.value ?? base ?? false;
 
   const min = pendingCard?.min ?? el.min ?? 0;
   const max = pendingCard?.max ?? el.max ?? "*";
   const vs = pendingBind?.valueSet ?? el.binding?.valueSet ?? "";
   const strength = pendingBind?.strength ?? el.binding?.strength ?? "required";
-  const mustSupport = pendingMS?.value ?? el.mustSupport ?? false;
+  const flags: { flag: ElementFlag; on: boolean }[] = [
+    { flag: "mustSupport", on: flagValue("mustSupport", el.mustSupport) },
+    { flag: "isSummary", on: flagValue("isSummary", el.isSummary) },
+    { flag: "isModifier", on: flagValue("isModifier", el.isModifier) },
+  ];
 
-  const dirty = !!pendingCard || !!pendingBind || !!pendingMS;
+  const dirty = !!pendingCard || !!pendingBind || flagEdits.length > 0;
   const isSlice = !!el.sliceName;
   const isExtension = el.path.endsWith(".extension");
   // Only repeating-or-sliceable elements get a slice action; keep it simple by
@@ -467,21 +477,21 @@ function ElementRow({
           )}
         </td>
         <td className="ms-cell">
-          <label className={"ms-toggle" + (mustSupport ? " on" : "")}>
-            <input
-              type="checkbox"
-              checked={mustSupport}
-              onChange={(e) =>
-                onEdit({
-                  kind: "setMustSupport",
-                  artifactId,
-                  path: editKey,
-                  value: e.target.checked,
-                })
-              }
-            />
-            MS
-          </label>
+          <div className="flag-toggles">
+            {flags.map(({ flag, on }) => (
+              <button
+                key={flag}
+                type="button"
+                className={"flag-toggle" + (on ? " on" : "")}
+                title={`${flag} — click to ${on ? "clear" : "set"}`}
+                onClick={() =>
+                  onEdit({ kind: "setFlag", artifactId, path: editKey, flag, value: !on })
+                }
+              >
+                {FLAG_LABELS[flag]}
+              </button>
+            ))}
+          </div>
         </td>
         <td>
         <div className="card-edit">

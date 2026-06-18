@@ -122,6 +122,8 @@ export const xmlAdapter: Adapter = {
           max: leafValue(child(el, "max")),
           short: leafValue(child(el, "short")),
           mustSupport: leafValue(child(el, "mustSupport")) === "true",
+          isSummary: leafValue(child(el, "isSummary")) === "true",
+          isModifier: leafValue(child(el, "isModifier")) === "true",
           types: typeEls.map((t) => leafValue(child(t, "code"))).filter(Boolean) as string[],
           binding: binding
             ? {
@@ -161,14 +163,14 @@ export const xmlAdapter: Adapter = {
         working = ensureElement(working, edit.path);
         working = ensureBinding(working, edit.path, edit.valueSet, edit.strength);
         descs.push(`${edit.path} binding → ${edit.valueSet} (${edit.strength})`);
-      } else if (edit.kind === "setMustSupport") {
+      } else if (edit.kind === "setFlag") {
         if (edit.value) {
           working = ensureElement(working, edit.path);
-          working = setElementLeaf(working, edit.path, "mustSupport", "true");
+          working = setElementLeaf(working, edit.path, edit.flag, "true");
         } else {
-          working = removeElementLeaf(working, edit.path, "mustSupport");
+          working = removeElementLeaf(working, edit.path, edit.flag);
         }
-        descs.push(`${edit.path} mustSupport → ${edit.value}`);
+        descs.push(`${edit.path} ${edit.flag} → ${edit.value}`);
       } else if (edit.kind === "addSlice") {
         working = ensureElement(working, edit.path);
         if (edit.discriminator) working = ensureSlicing(working, edit.path, edit.discriminator);

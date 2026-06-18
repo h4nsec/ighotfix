@@ -122,6 +122,8 @@ export const jsonAdapter: Adapter = {
         max: el.max,
         short: el.short,
         mustSupport: el.mustSupport,
+        isSummary: el.isSummary,
+        isModifier: el.isModifier,
         types: Array.isArray(el.type)
           ? el.type.map((t: any) => t.code).filter(Boolean)
           : undefined,
@@ -193,23 +195,23 @@ export const jsonAdapter: Adapter = {
           mods.push({ path: ["differential", "element", idx, "binding"], value: bindingValue });
         }
         description = `${edit.path} binding → ${edit.valueSet} (${edit.strength})`;
-      } else if (edit.kind === "setMustSupport") {
+      } else if (edit.kind === "setFlag") {
         if (edit.value) {
           if (idx === undefined) {
             const at = differentialLength(root);
             mods.push({
               path: ["differential", "element", at],
-              value: { id: edit.path, path: edit.path, mustSupport: true },
+              value: { id: edit.path, path: edit.path, [edit.flag]: true },
               insert: true,
             });
           } else {
-            mods.push({ path: ["differential", "element", idx, "mustSupport"], value: true });
+            mods.push({ path: ["differential", "element", idx, edit.flag], value: true });
           }
         } else if (idx !== undefined) {
-          // Clearing mustSupport removes the property (FHIR omits false).
-          mods.push({ path: ["differential", "element", idx, "mustSupport"], value: undefined });
+          // Clearing a flag removes the property (FHIR omits false).
+          mods.push({ path: ["differential", "element", idx, edit.flag], value: undefined });
         }
-        description = `${edit.path} mustSupport → ${edit.value}`;
+        description = `${edit.path} ${edit.flag} → ${edit.value}`;
       } else if (edit.kind === "addSlice") {
         const baseIdx = findBaseElementIndex(root, edit.path);
         if (baseIdx !== undefined && !hasSlicing(root, baseIdx)) {

@@ -3,6 +3,7 @@ import {
   type Artifact,
   type Edit,
   type ElementBinding,
+  type ElementFlag,
   type ElementView,
   type ProfileView,
   type TextChange,
@@ -33,8 +34,25 @@ const ENTITY_KEYWORDS = [
 
 const ENTITY_RE = new RegExp(`^(${ENTITY_KEYWORDS.join("|")})\\s*:\\s*(.*)$`);
 const CARD_RE = /\b(\d+)\.\.(\d+|\*)/;
-const MS_RE = /\bMS\b/;
 const STRENGTHS = ["required", "extensible", "preferred", "example"] as const;
+
+/** FSH flag token for each editable boolean flag. */
+const FLAG_TOKENS: Record<ElementFlag, string> = {
+  mustSupport: "MS",
+  isSummary: "SU",
+  isModifier: "?!",
+};
+
+/** A matcher for a flag token — word-bounded for letters, literal for `?!`. */
+function flagRegex(token: string): RegExp {
+  if (/^[A-Za-z]/.test(token)) return new RegExp(`\\b${token}\\b`);
+  return new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+}
+const FLAG_RES: Record<ElementFlag, RegExp> = {
+  mustSupport: flagRegex(FLAG_TOKENS.mustSupport),
+  isSummary: flagRegex(FLAG_TOKENS.isSummary),
+  isModifier: flagRegex(FLAG_TOKENS.isModifier),
+};
 
 interface Span {
   start: number;
@@ -330,7 +348,9 @@ export const fshAdapter: Adapter = {
           strength: rule.binding.strength,
         };
       }
-      if (/\bMS\b/.test(rule.rest)) row.mustSupport = true;
+      if (FLAG_RES.mustSupport.test(rule.rest)) row.mustSupport = true;
+      if (FLAG_RES.isSummary.test(rule.rest)) row.isSummary = true;
+      if (FLAG_RES.isModifier.test(rule.rest)) row.isModifier = true;
     }
 
     return {
@@ -421,36 +441,36 @@ function computeRuleChange(
       edit.path, `binding → ${edit.valueSet} (${edit.strength})`);
   }
 
-  if (edit.kind === "setMustSupport") {
+  if (edit.kind === "setFlag") {
+    const token = FLAG_TOKENS[edit.flag];
+    const re = FLAG_RES[edit.flag];
     const rules = rulesForPath.filter((r) => !r.contains);
-    const msRule = rules.find((r) => MS_RE.test(r.rest));
+    const flagRule = rules.find((r) => re.test(r.rest));
     if (edit.value) {
-      if (msRule) return null; // already MS
+      if (flagRule) return null; // flag already present
       // Prefer the cardinality rule; avoid appending onto a `from` binding rule.
       const target = rules.find((r) => r.card) ?? rules.find((r) => !r.binding);
       if (target) {
         return {
           start: target.lineEnd,
           end: target.lineEnd,
-          newText: " MS",
-          description: `${edit.path} mustSupport → true`,
+          newText: ` ${token}`,
+          description: `${edit.path} ${edit.flag} → true`,
         };
       }
-      return appendRule(profile, `* ${relPath} MS`, edit.path, "mustSupport → true");
+      return appendRule(profile, `* ${relPath} ${token}`, edit.path, `${edit.flag} → true`);
     }
-    // Clearing MS: delete the flag token (with a surrounding space) from its rule.
-    if (!msRule) return null;
-    const m = MS_RE.exec(msRule.rest);
+    // Clearing: delete the flag token (with a surrounding space) from its rule.
+    if (!flagRule) return null;
+    const m = re.exec(flagRule.rest);
     if (!m) return null;
-    const tokenStart = msRule.pathSpan.end + m.index;
-    // Remove a single adjacent space along with the token.
-    const before = msRule.pathSpan.end + m.index - 1;
-    const removeStart = m.index > 0 ? before : tokenStart;
+    const tokenStart = flagRule.pathSpan.end + m.index;
+    const removeStart = m.index > 0 ? tokenStart - 1 : tokenStart;
     return {
       start: removeStart,
-      end: tokenStart + 2,
+      end: tokenStart + token.length,
       newText: "",
-      description: `${edit.path} mustSupport → false`,
+      description: `${edit.path} ${edit.flag} → false`,
     };
   }
 
