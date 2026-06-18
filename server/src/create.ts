@@ -8,7 +8,7 @@ export interface CreateRequest {
   /** Resource id; also used as the filename. */
   id: string;
   name: string;
-  language: "json" | "xml";
+  language: "json" | "xml" | "fsh";
   /** Relative directory under the IG root to place the file. */
   dir?: string;
   /** Canonical URL base, e.g. "http://hl7.org.au/fhir/core". */
@@ -51,10 +51,52 @@ function skeletonObject(req: CreateRequest, url: string): any {
   };
 }
 
-/** Serialize the skeleton object to pretty JSON or FHIR XML. */
-function serialize(obj: any, language: "json" | "xml"): string {
+/** Serialize the skeleton object to pretty JSON, FHIR XML, or FSH. */
+function serialize(obj: any, language: "json" | "xml" | "fsh"): string {
   if (language === "json") return JSON.stringify(obj, null, 2) + "\n";
+  if (language === "fsh") return objectToFsh(obj) + "\n";
   return objectToFhirXml(obj) + "\n";
+}
+
+const FSH_CODE_LEAVES = new Set([
+  "status",
+  "code",
+  "type",
+  "mode",
+  "base",
+  "kind",
+  "fhirVersion",
+  "format",
+]);
+
+/** Emit FSH `* path = value` assignment rules from a skeleton object. */
+function fshRules(value: unknown, prefix: string, leaf: string): string[] {
+  if (value === null || value === undefined) return [];
+  if (typeof value !== "object") {
+    const v =
+      typeof value === "boolean" || typeof value === "number"
+        ? String(value)
+        : FSH_CODE_LEAVES.has(leaf)
+          ? `#${value}`
+          : `"${String(value).replace(/"/g, '\\"')}"`;
+    return value === "" ? [] : [`* ${prefix} = ${v}`];
+  }
+  const out: string[] = [];
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (Array.isArray(v)) v.forEach((it, i) => out.push(...fshRules(it, `${prefix}.${k}[${i}]`, k)));
+    else out.push(...fshRules(v, `${prefix}.${k}`, k));
+  }
+  return out;
+}
+
+function objectToFsh(obj: any): string {
+  const lines = [`Instance: ${obj.id}`, `InstanceOf: ${obj.resourceType}`, `Usage: #definition`];
+  for (const [k, v] of Object.entries(obj)) {
+    if (k === "resourceType" || k === "id") continue;
+    if (Array.isArray(v)) v.forEach((it, i) => lines.push(...fshRules(it, `${k}[${i}]`, k)));
+    else lines.push(...fshRules(v, k, k));
+  }
+  return lines.join("\n");
 }
 
 function esc(v: unknown): string {
@@ -112,7 +154,7 @@ export async function createArtifact(
 ): Promise<{ artifactId: string }> {
   const id = safeId(req.id);
   if (!id) throw new Error("id is required");
-  const ext = req.language === "json" ? ".json" : ".xml";
+  const ext = req.language === "json" ? ".json" : req.language === "fsh" ? ".fsh" : ".xml";
   const relDir = (req.dir ?? "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
   const relPath = (relDir ? `${relDir}/` : "") + id + ext;
   const absDir = path.join(root, relDir);

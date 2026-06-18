@@ -26,14 +26,11 @@ function inferDir(artifacts: Artifact[]): string {
   return i === -1 ? "" : near.id.slice(0, i);
 }
 
-function inferLanguage(artifacts: Artifact[]): "json" | "xml" {
-  let xml = 0;
-  let json = 0;
-  for (const a of artifacts) {
-    if (a.language === "xml") xml++;
-    else if (a.language === "json") json++;
-  }
-  return xml >= json ? "xml" : "json";
+function inferLanguage(artifacts: Artifact[]): "json" | "xml" | "fsh" {
+  const counts: Record<string, number> = { xml: 0, json: 0, fsh: 0 };
+  for (const a of artifacts) counts[a.language] = (counts[a.language] ?? 0) + 1;
+  const order: ("fsh" | "xml" | "json")[] = ["fsh", "xml", "json"];
+  return order.sort((a, b) => counts[b] - counts[a])[0];
 }
 
 export function NewArtifactDialog({
@@ -49,7 +46,7 @@ export function NewArtifactDialog({
   const [name, setName] = useState("");
   const [id, setId] = useState("");
   const [idTouched, setIdTouched] = useState(false);
-  const [language, setLanguage] = useState<"json" | "xml">(() => inferLanguage(artifacts));
+  const [language, setLanguage] = useState<"json" | "xml" | "fsh">(() => inferLanguage(artifacts));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -127,7 +124,7 @@ export function NewArtifactDialog({
 
           <label>Format</label>
           <div className="seg">
-            {(["xml", "json"] as const).map((l) => (
+            {(["xml", "json", "fsh"] as const).map((l) => (
               <button key={l} className={language === l ? "on" : ""} onClick={() => setLanguage(l)}>
                 {l}
               </button>

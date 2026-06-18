@@ -1,5 +1,6 @@
 import {
   classify,
+  parsePath,
   type Artifact,
   type Edit,
   type ElementBinding,
@@ -8,7 +9,7 @@ import {
   type ProfileView,
   type TextChange,
 } from "@igb/shared";
-import type { Adapter, LoadedSource } from "./types.js";
+import { collapseToOriginal, type Adapter, type LoadedSource } from "./types.js";
 
 /* ------------------------------------------------------------------ *
  * A deliberately small, offset-tracking FSH reader.
@@ -281,8 +282,13 @@ export const fshAdapter: Adapter = {
       entities.find((e) => e.kind === "Extension") ??
       entities.find((e) => e.kind !== "Alias" && e.kind !== "RuleSet");
     if (!primary) return null;
+    // An Instance's resourceType comes from its InstanceOf header.
     const resourceType =
-      primary.kind === "Extension" ? "StructureDefinition" : mapKindToResourceType(primary.kind);
+      primary.kind === "Extension"
+        ? "StructureDefinition"
+        : primary.kind === "Instance"
+          ? (primary.header.InstanceOf ?? "Instance")
+          : mapKindToResourceType(primary.kind);
     const sdType = primary.kind === "Extension" ? "Extension" : undefined;
     const c = classify(resourceType, { sdType });
     return {
@@ -290,7 +296,7 @@ export const fshAdapter: Adapter = {
       filePath: src.filePath,
       language: "fsh",
       resourceType,
-      name: primary.name,
+      name: instanceName(primary, src.text) ?? primary.name,
       title: stripQuotes(primary.header.Title),
       url: undefined,
       ...c,
@@ -366,6 +372,20 @@ export const fshAdapter: Adapter = {
   },
 
   computeChanges(src: LoadedSource, edits: Edit[]): TextChange[] {
+    // Generic value edits address an Instance's assignment rules.
+    const GENERIC = new Set(["setValue", "addValue", "removeValue"]);
+    if (edits.some((e) => GENERIC.has(e.kind))) {
+      let working = src.text;
+      const descs: string[] = [];
+      for (const edit of edits) {
+        if (!GENERIC.has(edit.kind)) continue;
+        const r = applyInstanceEdit(working, edit);
+        working = r.text;
+        if (r.desc) descs.push(r.desc);
+      }
+      return collapseToOriginal(src.text, working, descs);
+    }
+
     let working = src.text;
     const out: TextChange[] = [];
 
@@ -544,4 +564,225 @@ function mapKindToResourceType(kind: string): string {
     default:
       return kind;
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * FSH Instance support — conformance resources (SearchParameter,
+ * CapabilityStatement, …) are written as `Instance:` definitions whose
+ * `* path = value` assignment rules use the same `[n]` path syntax as the
+ * generic edit engine. We read them into an object and edit the rules.
+ * ------------------------------------------------------------------ */
+
+/** Leaf names whose FSH value is a code (`#x`) rather than a string. */
+const CODE_LEAVES = new Set([
+  "status",
+  "code",
+  "type",
+  "mode",
+  "base",
+  "target",
+  "valueCode",
+  "kind",
+  "fhirVersion",
+  "format",
+  "referencePolicy",
+  "use",
+  "gender",
+]);
+
+interface FshAssignment {
+  path: string;
+  valueStart: number;
+  valueEnd: number;
+  rawValue: string;
+}
+
+/** Interpret a rule as an assignment (`* path = value`), with value offsets. */
+function asAssignment(rule: FshRule, text: string): FshAssignment | null {
+  const m = /^\s*=\s*/.exec(rule.rest);
+  if (!m) return null;
+  const valueStart = rule.pathSpan.end + m[0].length;
+  const raw = text.slice(valueStart, rule.lineEnd).replace(/\s+$/, "");
+  return { path: rule.path, valueStart, valueEnd: valueStart + raw.length, rawValue: raw };
+}
+
+/** The `* name =` rule value if present, else the declared instance id. */
+function instanceName(entity: FshEntity, text: string): string | undefined {
+  if (entity.kind !== "Instance") return undefined;
+  for (const rule of entity.rules) {
+    if (rule.path !== "name") continue;
+    const a = asAssignment(rule, text);
+    if (a) return parseFshValue(a.rawValue) as string;
+  }
+  return entity.name;
+}
+
+function leafOf(path: string): string {
+  const noIdx = path.replace(/\[\d+\]$/, "");
+  const dot = noIdx.lastIndexOf(".");
+  return (dot === -1 ? noIdx : noIdx.slice(dot + 1)).replace(/\[\d+\]/g, "");
+}
+
+function parseFshValue(raw: string): unknown {
+  const v = raw.trim();
+  if (v.startsWith("#")) {
+    let c = v.slice(1);
+    if (c.startsWith('"')) c = c.slice(1, c.lastIndexOf('"'));
+    return c;
+  }
+  if (v.startsWith('"')) return v.slice(1, v.lastIndexOf('"')).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+  if (v === "true") return true;
+  if (v === "false") return false;
+  if (/^-?\d+(\.\d+)?$/.test(v)) return Number(v);
+  const wrapped = /^(?:Canonical|Reference)\((.*)\)$/.exec(v);
+  if (wrapped) return wrapped[1];
+  return v;
+}
+
+function serializeFshValue(leaf: string, value: unknown, existingRaw?: string): string {
+  if (typeof value === "boolean") return String(value);
+  if (typeof value === "number") return String(value);
+  const s = String(value);
+  const asCode =
+    existingRaw !== undefined ? existingRaw.trim().startsWith("#") : CODE_LEAVES.has(leaf);
+  if (asCode) return /^[^\s"]+$/.test(s) ? `#${s}` : `#"${s}"`;
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function setNested(obj: any, segs: (string | number)[], value: unknown): void {
+  let cur = obj;
+  for (let i = 0; i < segs.length - 1; i++) {
+    const seg = segs[i];
+    const wantArray = typeof segs[i + 1] === "number";
+    if (cur[seg] === undefined) cur[seg] = wantArray ? [] : {};
+    cur = cur[seg];
+  }
+  cur[segs[segs.length - 1]] = value;
+}
+
+/** Normalize a FSH Instance into a FHIR-JSON-ish object. */
+export function instanceToObject(text: string): any {
+  const inst = parseEntities(text).find((e) => e.kind === "Instance");
+  if (!inst) return null;
+  const obj: any = {};
+  if (inst.header.InstanceOf) obj.resourceType = inst.header.InstanceOf;
+  obj.id = inst.name;
+  for (const rule of inst.rules) {
+    const a = asAssignment(rule, text);
+    if (!a) continue;
+    setNested(obj, parsePath(a.path), parseFshValue(a.rawValue));
+  }
+  return obj;
+}
+
+/** Flatten an added object into [relativePath, primitive] pairs. */
+function flattenValue(value: unknown, prefix = ""): [string, unknown][] {
+  if (value === null || value === undefined || typeof value !== "object") {
+    return [[prefix, value]];
+  }
+  const out: [string, unknown][] = [];
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (Array.isArray(v)) {
+      v.forEach((item, i) => out.push(...flattenValue(item, prefix ? `${prefix}.${k}[${i}]` : `${k}[${i}]`)));
+    } else {
+      out.push(...flattenValue(v, prefix ? `${prefix}.${k}` : k));
+    }
+  }
+  return out;
+}
+
+function instanceRules(text: string): { inst: FshEntity; assigns: { rule: FshRule; a: FshAssignment }[] } | null {
+  const inst = parseEntities(text).find((e) => e.kind === "Instance");
+  if (!inst) return null;
+  const assigns = inst.rules
+    .map((rule) => ({ rule, a: asAssignment(rule, text) }))
+    .filter((x): x is { rule: FshRule; a: FshAssignment } => x.a !== null);
+  return { inst, assigns };
+}
+
+function lastInstanceAnchor(inst: FshEntity): number {
+  const last = inst.rules[inst.rules.length - 1];
+  return last ? last.lineEnd : inst.declEnd;
+}
+
+function arrayCount(assigns: { a: FshAssignment }[], arrPath: string): number {
+  const re = new RegExp(`^${arrPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\[(\\d+)\\]`);
+  let max = -1;
+  for (const { a } of assigns) {
+    const m = re.exec(a.path);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return max + 1;
+}
+
+/** Apply a single generic value edit to an Instance, returning new text. */
+function applyInstanceEdit(text: string, edit: Edit): { text: string; desc: string } {
+  const parsed = instanceRules(text);
+  if (!parsed) return { text, desc: "" };
+  const { inst, assigns } = parsed;
+
+  if (edit.kind === "setValue") {
+    if (edit.value === null) return applyInstanceEdit(text, { ...edit, kind: "removeValue" } as Edit);
+    const found = assigns.find((x) => x.a.path === edit.path);
+    const leaf = leafOf(edit.path);
+    if (found) {
+      const v = serializeFshValue(leaf, edit.value, found.a.rawValue);
+      return { text: splice(text, found.a.valueStart, found.a.valueEnd, v), desc: `${edit.path} = ${edit.value}` };
+    }
+    const anchor = lastInstanceAnchor(inst);
+    const rule = `\n* ${edit.path} = ${serializeFshValue(leaf, edit.value)}`;
+    return { text: splice(text, anchor, anchor, rule), desc: `${edit.path} = ${edit.value}` };
+  }
+
+  if (edit.kind === "addValue") {
+    const n = arrayCount(assigns, edit.path);
+    const flat = flattenValue(edit.value);
+    const lines = flat.map(([sub, val]) => {
+      const path = sub ? `${edit.path}[${n}].${sub}` : `${edit.path}[${n}]`;
+      return `* ${path} = ${serializeFshValue(leafOf(path), val)}`;
+    });
+    const anchor = lastInstanceAnchor(inst);
+    return { text: splice(text, anchor, anchor, "\n" + lines.join("\n")), desc: `${edit.path} + item` };
+  }
+
+  if (edit.kind === "removeValue") {
+    const removePath = edit.path;
+    const m = /^(.*)\[(\d+)\]$/.exec(removePath);
+    const arrayPrefix = m ? m[1] : undefined;
+    const removedIdx = m ? Number(m[2]) : undefined;
+    const edits: { start: number; end: number; newText: string }[] = [];
+
+    for (const { rule, a } of assigns) {
+      const p = a.path;
+      const isTarget =
+        p === removePath || p.startsWith(removePath + ".") || p.startsWith(removePath + "[");
+      if (isTarget) {
+        const nl = text.indexOf("\n", rule.lineStart);
+        edits.push({ start: rule.lineStart, end: nl === -1 ? text.length : nl + 1, newText: "" });
+        continue;
+      }
+      // Re-index sibling array elements after the removed one.
+      if (arrayPrefix !== undefined && removedIdx !== undefined) {
+        const sib = new RegExp(`^${arrayPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\[(\\d+)\\]`).exec(p);
+        if (sib) {
+          const k = Number(sib[1]);
+          if (k > removedIdx) {
+            const newPath = `${arrayPrefix}[${k - 1}]` + p.slice(`${arrayPrefix}[${k}]`.length);
+            edits.push({ start: rule.pathSpan.start, end: rule.pathSpan.end, newText: newPath });
+          }
+        }
+      }
+    }
+    let out = text;
+    for (const e of edits.sort((x, y) => y.start - x.start)) {
+      out = out.slice(0, e.start) + e.newText + out.slice(e.end);
+    }
+    return { text: out, desc: `remove ${edit.path}` };
+  }
+
+  return { text, desc: "" };
+}
+
+function splice(text: string, start: number, end: number, newText: string): string {
+  return text.slice(0, start) + newText + text.slice(end);
 }

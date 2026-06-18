@@ -6,6 +6,7 @@ import type {
 } from "@igb/shared";
 import type { LoadedSource } from "./adapters/index.js";
 import { xmlResourceObject } from "./adapters/xml-scan.js";
+import { instanceToObject } from "./adapters/fsh.js";
 
 /** Parse a source into a FHIR-JSON object (best effort). */
 function toObject(src: LoadedSource): any {
@@ -17,7 +18,7 @@ function toObject(src: LoadedSource): any {
     }
   }
   if (src.language === "xml") return xmlResourceObject(src.text);
-  // FSH non-profile artifacts are uncommon as examples; surface raw only.
+  if (src.language === "fsh") return instanceToObject(src.text);
   return null;
 }
 
@@ -128,13 +129,14 @@ function sectionsFor(rt: string, obj: any): ResourceSection[] {
   return sections;
 }
 
-/** Resource types with a dedicated structured editor (JSON/XML sources only). */
+/** Resource types with a dedicated structured editor. */
 const EDITABLE_TYPES = new Set(["SearchParameter", "CapabilityStatement"]);
 
 export function buildResourceView(src: LoadedSource, artifact: Artifact): ResourceView {
   const obj = toObject(src) ?? {};
   const rt = artifact.resourceType;
-  const editableType = src.language !== "fsh" && EDITABLE_TYPES.has(rt);
+  // FSH instances are editable too, but only when we could normalize the rules.
+  const editableType = EDITABLE_TYPES.has(rt) && (src.language !== "fsh" || !!toObject(src));
 
   const fields = compact([
     field("URL", obj.url),

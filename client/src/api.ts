@@ -50,7 +50,7 @@ export interface CreateArtifactRequest {
   resourceType: "SearchParameter" | "CapabilityStatement";
   id: string;
   name: string;
-  language: "json" | "xml";
+  language: "json" | "xml" | "fsh";
   dir?: string;
   canonicalBase?: string;
 }
