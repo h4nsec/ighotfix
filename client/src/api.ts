@@ -59,6 +59,57 @@ export function createArtifact(req: CreateArtifactRequest): Promise<{ artifactId
   return jpost<{ artifactId: string }>("/api/create", req);
 }
 
+/* ---------------- git ---------------- */
+
+export interface GitFile {
+  path: string;
+  code: string;
+  staged: boolean;
+  label: string;
+}
+export interface GitStatus {
+  isRepo: boolean;
+  root?: string;
+  branch?: string;
+  ahead?: number;
+  behind?: number;
+  hasRemote?: boolean;
+  clean?: boolean;
+  files?: GitFile[];
+  detached?: boolean;
+  gitMissing?: boolean;
+}
+export interface GitCommit {
+  hash: string;
+  author: string;
+  date: string;
+  subject: string;
+}
+export interface GitOpResult {
+  ok: boolean;
+  output: string;
+}
+
+async function jget<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+  return res.json();
+}
+
+export const gitStatus = () => jget<GitStatus>("/api/git/status");
+export const gitBranches = () => jget<{ current: string; branches: string[] }>("/api/git/branches");
+export const gitLog = (n = 25) => jget<GitCommit[]>(`/api/git/log?n=${n}`);
+export const gitDiff = (file?: string) =>
+  jget<{ diff: string }>(`/api/git/diff${file ? `?file=${encodeURIComponent(file)}` : ""}`);
+
+export const gitInit = () => jpost<GitOpResult>("/api/git/init", {});
+export const gitCommit = (message: string) => jpost<GitOpResult>("/api/git/commit", { message });
+export const gitCreateBranch = (name: string, checkout: boolean) =>
+  jpost<GitOpResult>("/api/git/branch", { name, checkout });
+export const gitCheckout = (name: string) => jpost<GitOpResult>("/api/git/checkout", { name });
+export const gitPush = () => jpost<GitOpResult>("/api/git/push", {});
+export const gitPull = () => jpost<GitOpResult>("/api/git/pull", {});
+
 export async function getProfile(artifactId: string): Promise<ProfileView> {
   const res = await fetch(`/api/profile?artifactId=${encodeURIComponent(artifactId)}`);
   if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);

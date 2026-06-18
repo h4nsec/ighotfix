@@ -9,12 +9,13 @@ import type {
   ResourceView,
 } from "@igb/shared";
 import { FLAG_LABELS } from "@igb/shared";
-import { applyEdits, getProfile, getResource, loadIg } from "./api.js";
+import { applyEdits, getProfile, getResource, gitStatus, loadIg, type GitStatus } from "./api.js";
 import { FolderPicker } from "./FolderPicker.js";
 import { ResourceViewer } from "./ResourceViewer.js";
 import { SearchParameterEditor } from "./SearchParameterEditor.js";
 import { CapabilityStatementEditor } from "./CapabilityStatementEditor.js";
 import { NewArtifactDialog } from "./NewArtifactDialog.js";
+import { GitPanel } from "./GitPanel.js";
 
 const DEFAULT_ROOT = "C:/Users/User/Documents/IG Builder/fixtures/sample-ig";
 
@@ -39,7 +40,17 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [gitOpen, setGitOpen] = useState(false);
+  const [git, setGit] = useState<GitStatus | null>(null);
   const [filter, setFilter] = useState("");
+
+  async function refreshGit() {
+    try {
+      setGit(await gitStatus());
+    } catch {
+      setGit(null);
+    }
+  }
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ Examples: true });
 
   async function doLoad(target = root) {
@@ -52,6 +63,7 @@ export function App() {
       setProfile(null);
       setResource(null);
       setPending([]);
+      refreshGit();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -98,6 +110,7 @@ export function App() {
       await applyEdits(selected, pending, true);
       await reopen(selected);
       setPending([]);
+      refreshGit();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -135,6 +148,20 @@ export function App() {
             + New
           </button>
         )}
+        {artifacts.length > 0 && (
+          <button className="git-chip" onClick={() => setGitOpen(true)} title="Git">
+            {git?.isRepo ? (
+              <>
+                <span className="git-icon">⎇</span> {git.branch}
+                {!git.clean && <span className="git-dot" title="uncommitted changes" />}
+              </>
+            ) : (
+              <>
+                <span className="git-icon">⎇</span> git
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {picking && (
@@ -159,9 +186,12 @@ export function App() {
             setArtifacts(summary.artifacts);
             const a = summary.artifacts.find((x) => x.id === artifactId);
             if (a) await openArtifact(a);
+            refreshGit();
           }}
         />
       )}
+
+      {gitOpen && <GitPanel onClose={() => setGitOpen(false)} onChanged={refreshGit} />}
 
       {error && <div className="error">{error}</div>}
 

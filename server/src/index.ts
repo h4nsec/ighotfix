@@ -12,6 +12,7 @@ import { loadIg, loadSource } from "./loader.js";
 import { browse } from "./browse.js";
 import { buildResourceView } from "./resource.js";
 import { createArtifact, type CreateRequest } from "./create.js";
+import * as gitOps from "./git.js";
 import {
   adapterForExtension,
   applyChanges,
@@ -80,6 +81,67 @@ app.get("/api/resource", async (req, res) => {
     const artifact = adapter?.describe(src);
     if (!artifact) return res.status(404).json({ error: "not FHIR" });
     res.json(buildResourceView(src, artifact));
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+/* ---------------- git ---------------- */
+
+function requireRoot(res: express.Response): string | null {
+  if (!currentRoot) {
+    res.status(409).json({ error: "no IG loaded" });
+    return null;
+  }
+  return currentRoot;
+}
+
+app.get("/api/git/status", async (_req, res) => {
+  const root = requireRoot(res);
+  if (!root) return;
+  res.json(await gitOps.status(root));
+});
+
+app.get("/api/git/branches", async (_req, res) => {
+  const root = requireRoot(res);
+  if (!root) return;
+  res.json(await gitOps.branches(root));
+});
+
+app.get("/api/git/log", async (req, res) => {
+  const root = requireRoot(res);
+  if (!root) return;
+  res.json(await gitOps.log(root, Number(req.query.n ?? 25)));
+});
+
+app.get("/api/git/diff", async (req, res) => {
+  const root = requireRoot(res);
+  if (!root) return;
+  res.json({ diff: await gitOps.diff(root, req.query.file ? String(req.query.file) : undefined) });
+});
+
+app.post("/api/git/:action", async (req, res) => {
+  const root = requireRoot(res);
+  if (!root) return;
+  const { action } = req.params;
+  const body = req.body ?? {};
+  try {
+    switch (action) {
+      case "init":
+        return res.json(await gitOps.init(root));
+      case "commit":
+        return res.json(await gitOps.commit(root, String(body.message ?? "")));
+      case "branch":
+        return res.json(await gitOps.createBranch(root, String(body.name ?? ""), !!body.checkout));
+      case "checkout":
+        return res.json(await gitOps.checkout(root, String(body.name ?? "")));
+      case "push":
+        return res.json(await gitOps.push(root));
+      case "pull":
+        return res.json(await gitOps.pull(root));
+      default:
+        return res.status(404).json({ error: `unknown git action: ${action}` });
+    }
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
