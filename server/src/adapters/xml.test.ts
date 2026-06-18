@@ -32,7 +32,7 @@ describe("xml adapter", () => {
     const art = xmlAdapter.describe(src(XML))!;
     expect(art.resourceType).toBe("StructureDefinition");
     expect(art.name).toBe("MyEncounter");
-    expect(art.supported).toBe(true);
+    expect(art.editable).toBe(true);
   });
 
   it("projects a profile view", () => {

@@ -5,7 +5,17 @@ import type { Artifact, IgSummary } from "@igb/shared";
 import { adapterForExtension, type LoadedSource } from "./adapters/index.js";
 
 const PATTERNS = ["**/*.fsh", "**/*.json", "**/*.xml"];
-const IGNORE = ["**/node_modules/**", "**/output/**", "**/temp/**", "**/.git/**"];
+const IGNORE = [
+  "**/node_modules/**",
+  "**/output/**",
+  "**/temp/**",
+  "**/.git/**",
+  "**/fsh-generated/**",
+  "**/input-cache/**",
+  "**/pagecontent/**",
+  "**/includes/**",
+  "**/intro-notes/**",
+];
 
 export async function loadSource(
   root: string,

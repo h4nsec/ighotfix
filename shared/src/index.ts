@@ -9,6 +9,29 @@
 
 export type SourceLanguage = "fsh" | "json" | "xml";
 
+export type ArtifactKind =
+  | "profile"
+  | "extension"
+  | "logical"
+  | "valueset"
+  | "codesystem"
+  | "conceptmap"
+  | "capabilitystatement"
+  | "searchparameter"
+  | "operationdefinition"
+  | "implementationguide"
+  | "example"
+  | "other";
+
+export type ArtifactCategory =
+  | "Profiles"
+  | "Extensions"
+  | "Terminology"
+  | "Capabilities"
+  | "Implementation Guide"
+  | "Examples"
+  | "Other";
+
 /** A single FHIR conformance/example artifact discovered in the IG. */
 export interface Artifact {
   /** Stable id — the path relative to the IG root. */
@@ -20,10 +43,49 @@ export interface Artifact {
   resourceType: string;
   /** Human name (StructureDefinition.name etc.). */
   name: string;
+  /** Human title if present, else falls back to name. */
+  title?: string;
   /** Canonical url if present. */
   url?: string;
-  /** Whether we could project this into an editable view yet. */
-  supported: boolean;
+  kind: ArtifactKind;
+  category: ArtifactCategory;
+  /** True when this artifact has a structured editor (profiles/extensions). */
+  editable: boolean;
+}
+
+/** Classify a resource into a sidebar category + editability. */
+export function classify(
+  resourceType: string,
+  opts: { sdType?: string; sdKind?: string } = {},
+): { kind: ArtifactKind; category: ArtifactCategory; editable: boolean } {
+  switch (resourceType) {
+    case "StructureDefinition": {
+      if (opts.sdType === "Extension")
+        return { kind: "extension", category: "Extensions", editable: true };
+      if (opts.sdKind === "logical")
+        return { kind: "logical", category: "Profiles", editable: true };
+      return { kind: "profile", category: "Profiles", editable: true };
+    }
+    case "ValueSet":
+      return { kind: "valueset", category: "Terminology", editable: false };
+    case "CodeSystem":
+      return { kind: "codesystem", category: "Terminology", editable: false };
+    case "ConceptMap":
+    case "NamingSystem":
+      return { kind: "conceptmap", category: "Terminology", editable: false };
+    case "CapabilityStatement":
+      return { kind: "capabilitystatement", category: "Capabilities", editable: false };
+    case "SearchParameter":
+      return { kind: "searchparameter", category: "Capabilities", editable: false };
+    case "OperationDefinition":
+      return { kind: "operationdefinition", category: "Capabilities", editable: false };
+    case "ActorDefinition":
+      return { kind: "other", category: "Capabilities", editable: false };
+    case "ImplementationGuide":
+      return { kind: "implementationguide", category: "Implementation Guide", editable: false };
+    default:
+      return { kind: "example", category: "Examples", editable: false };
+  }
 }
 
 /** Lightweight summary used by the IG explorer tree. */
@@ -81,6 +143,41 @@ export interface ProfileView {
   derivation?: Derivation;
   url?: string;
   elements: ElementView[];
+}
+
+/* ------------------------------------------------------------------ *
+ * Read-only resource view (non-editable artifacts)
+ * ------------------------------------------------------------------ */
+
+export interface ResourceField {
+  label: string;
+  value: string;
+}
+
+export interface ResourceSection {
+  title: string;
+  /** Simple key/value rows. */
+  rows?: ResourceField[];
+  /** Tabular data (e.g. CapabilityStatement resources). */
+  table?: { headers: string[]; rows: string[][] };
+}
+
+/** A structured, read-only projection of any FHIR artifact. */
+export interface ResourceView {
+  artifactId: string;
+  resourceType: string;
+  language: SourceLanguage;
+  name?: string;
+  title?: string;
+  url?: string;
+  status?: string;
+  description?: string;
+  /** Top metadata key/value pairs. */
+  fields: ResourceField[];
+  /** Type-specific sections. */
+  sections: ResourceSection[];
+  /** Original source text. */
+  raw: string;
 }
 
 /* ------------------------------------------------------------------ *

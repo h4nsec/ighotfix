@@ -46,7 +46,7 @@ describe("fsh adapter", () => {
   it("projects a profile view", () => {
     const s = src("fsh", FSH);
     const art = fshAdapter.describe(s)!;
-    expect(art.supported).toBe(true);
+    expect(art.editable).toBe(true);
     const view = fshAdapter.toProfileView(s, art)!;
     expect(view.name).toBe("MyObservation");
     expect(view.type).toBe("Observation");

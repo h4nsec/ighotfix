@@ -4,6 +4,7 @@ import type {
   EditResult,
   IgSummary,
   ProfileView,
+  ResourceView,
 } from "@igb/shared";
 
 async function jpost<T>(url: string, body: unknown): Promise<T> {
@@ -47,6 +48,12 @@ export async function getHome(): Promise<string> {
 
 export async function getProfile(artifactId: string): Promise<ProfileView> {
   const res = await fetch(`/api/profile?artifactId=${encodeURIComponent(artifactId)}`);
+  if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+  return res.json();
+}
+
+export async function getResource(artifactId: string): Promise<ResourceView> {
+  const res = await fetch(`/api/resource?artifactId=${encodeURIComponent(artifactId)}`);
   if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
   return res.json();
 }

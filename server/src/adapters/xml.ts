@@ -1,9 +1,10 @@
-import type {
-  Artifact,
-  Edit,
-  ElementView,
-  ProfileView,
-  TextChange,
+import {
+  classify,
+  type Artifact,
+  type Edit,
+  type ElementView,
+  type ProfileView,
+  type TextChange,
 } from "@igb/shared";
 import { collapseToOriginal, type Adapter, type LoadedSource } from "./types.js";
 import {
@@ -78,19 +79,25 @@ export const xmlAdapter: Adapter = {
   extensions: [".xml"],
 
   describe(src: LoadedSource): Artifact | null {
-    const root = scanXml(src.text)[0];
+    const root = scanXml(src.text).find((e) => localName(e.name) !== "?xml") ?? scanXml(src.text)[0];
     if (!root) return null;
+    // Only treat genuine FHIR resources — the xmlns must be the FHIR namespace.
+    // This rejects xhtml fragments (<div>, <ul>) found in IG page content.
+    const xmlns = attrValue(root, "xmlns");
+    if (!xmlns || !xmlns.includes("hl7.org/fhir")) return null;
     const rt = localName(root.name);
-    // Only treat FHIR resources (heuristic: has child leaf elements with value).
-    const name = leafValue(child(root, "name")) ?? leafValue(child(root, "id")) ?? src.id;
+    const sdType = leafValue(child(root, "type"));
+    const sdKind = leafValue(child(root, "kind"));
+    const c = classify(rt, { sdType, sdKind });
     return {
       id: src.id,
       filePath: src.filePath,
       language: "xml",
       resourceType: rt,
-      name,
+      name: leafValue(child(root, "name")) ?? leafValue(child(root, "id")) ?? src.id,
+      title: leafValue(child(root, "title")),
       url: leafValue(child(root, "url")),
-      supported: rt === "StructureDefinition",
+      ...c,
     };
   },
 

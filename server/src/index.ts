@@ -10,6 +10,7 @@ import type {
 } from "@igb/shared";
 import { loadIg, loadSource } from "./loader.js";
 import { browse } from "./browse.js";
+import { buildResourceView } from "./resource.js";
 import {
   adapterForExtension,
   applyChanges,
@@ -63,6 +64,21 @@ app.get("/api/profile", async (req, res) => {
     const view: ProfileView | null = adapter.toProfileView(src, artifact);
     if (!view) return res.status(422).json({ error: "not a profile" });
     res.json(view);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+app.get("/api/resource", async (req, res) => {
+  const artifactId = String(req.query.artifactId ?? "");
+  if (!currentRoot) return res.status(409).json({ error: "no IG loaded" });
+  try {
+    const src = await loadSource(currentRoot, idToRel(artifactId));
+    if (!src) return res.status(404).json({ error: "not found" });
+    const adapter = adapterForExtension(path.extname(src.filePath));
+    const artifact = adapter?.describe(src);
+    if (!artifact) return res.status(404).json({ error: "not FHIR" });
+    res.json(buildResourceView(src, artifact));
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

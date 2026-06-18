@@ -1,10 +1,11 @@
-import type {
-  Artifact,
-  Edit,
-  ElementBinding,
-  ElementView,
-  ProfileView,
-  TextChange,
+import {
+  classify,
+  type Artifact,
+  type Edit,
+  type ElementBinding,
+  type ElementView,
+  type ProfileView,
+  type TextChange,
 } from "@igb/shared";
 import type { Adapter, LoadedSource } from "./types.js";
 
@@ -255,26 +256,31 @@ export const fshAdapter: Adapter = {
 
   describe(src: LoadedSource): Artifact | null {
     const entities = parseEntities(src.text);
-    const profile = entities.find((e) => e.kind === "Profile");
-    const any = profile ?? entities[0];
-    if (!any) return null;
-    const resourceType = profile
-      ? "StructureDefinition"
-      : mapKindToResourceType(any.kind);
+    // Prefer a definitional entity; ignore Alias/RuleSet-only files.
+    const primary =
+      entities.find((e) => e.kind === "Profile") ??
+      entities.find((e) => e.kind === "Extension") ??
+      entities.find((e) => e.kind !== "Alias" && e.kind !== "RuleSet");
+    if (!primary) return null;
+    const resourceType =
+      primary.kind === "Extension" ? "StructureDefinition" : mapKindToResourceType(primary.kind);
+    const sdType = primary.kind === "Extension" ? "Extension" : undefined;
+    const c = classify(resourceType, { sdType });
     return {
       id: src.id,
       filePath: src.filePath,
       language: "fsh",
       resourceType,
-      name: profile?.name ?? any.name,
+      name: primary.name,
+      title: stripQuotes(primary.header.Title),
       url: undefined,
-      supported: !!profile,
+      ...c,
     };
   },
 
   toProfileView(src: LoadedSource, artifact: Artifact): ProfileView | null {
     const entities = parseEntities(src.text);
-    const profile = entities.find((e) => e.kind === "Profile");
+    const profile = entities.find((e) => e.kind === "Profile" || e.kind === "Extension");
     if (!profile) return null;
 
     // Aggregate rules per path (and per slice) into element rows.
@@ -343,7 +349,7 @@ export const fshAdapter: Adapter = {
 
     for (const edit of edits) {
       const entities = parseEntities(working);
-      const profile = entities.find((e) => e.kind === "Profile");
+      const profile = entities.find((e) => e.kind === "Profile" || e.kind === "Extension");
       if (!profile) continue;
       const type = profile.header.Parent ?? "";
       // Edit.path is the fully-qualified path (Type or Type.element). FSH rules

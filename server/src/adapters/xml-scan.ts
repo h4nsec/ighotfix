@@ -174,6 +174,49 @@ export function localName(name: string): string {
   return i === -1 ? name : name.slice(i + 1);
 }
 
+/**
+ * Convert a FHIR XML element into the equivalent FHIR-JSON-ish object, so
+ * read-only tooling can treat XML and JSON sources uniformly. Leaf elements
+ * (`<x value="y"/>`) become primitives; repeated elements become arrays;
+ * non-`value` attributes (e.g. an extension's `url`) are kept as properties.
+ */
+export function xmlToObject(el: XmlElement): unknown {
+  const valueAttr = attrValue(el, "value");
+  const otherAttrs = el.attrs.filter((a) => a.name !== "value" && a.name !== "xmlns");
+
+  if (el.children.length === 0) {
+    if (otherAttrs.length === 0) return valueAttr ?? true;
+  }
+
+  const obj: Record<string, unknown> = {};
+  for (const a of otherAttrs) obj[a.name] = a.value;
+  if (valueAttr !== undefined) obj.value = valueAttr;
+
+  for (const c of el.children) {
+    const name = localName(c.name);
+    if (name === "div") {
+      obj[name] = "(xhtml)";
+      continue;
+    }
+    const v = xmlToObject(c);
+    if (obj[name] === undefined) obj[name] = v;
+    else {
+      if (!Array.isArray(obj[name])) obj[name] = [obj[name]];
+      (obj[name] as unknown[]).push(v);
+    }
+  }
+  return obj;
+}
+
+/** Parse a FHIR XML document into a resource object (adds resourceType). */
+export function xmlResourceObject(text: string): any {
+  const root = scanXml(text).find((e) => localName(e.name) !== "?xml") ?? scanXml(text)[0];
+  if (!root) return null;
+  const obj = xmlToObject(root);
+  if (obj && typeof obj === "object") (obj as any).resourceType = localName(root.name);
+  return obj;
+}
+
 /** The indentation (leading whitespace) of the line containing `offset`. */
 export function indentAt(text: string, offset: number): string {
   const lineStart = text.lastIndexOf("\n", offset - 1) + 1;

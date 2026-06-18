@@ -1,19 +1,40 @@
 import { useMemo, useState } from "react";
-import type { Artifact, Edit, ElementView, ProfileView } from "@igb/shared";
-import { applyEdits, getProfile, loadIg } from "./api.js";
+import type {
+  Artifact,
+  ArtifactCategory,
+  Edit,
+  ElementView,
+  ProfileView,
+  ResourceView,
+} from "@igb/shared";
+import { applyEdits, getProfile, getResource, loadIg } from "./api.js";
 import { FolderPicker } from "./FolderPicker.js";
+import { ResourceViewer } from "./ResourceViewer.js";
 
 const DEFAULT_ROOT = "C:/Users/User/Documents/IG Builder/fixtures/sample-ig";
+
+const CATEGORY_ORDER: ArtifactCategory[] = [
+  "Profiles",
+  "Extensions",
+  "Terminology",
+  "Capabilities",
+  "Implementation Guide",
+  "Examples",
+  "Other",
+];
 
 export function App() {
   const [root, setRoot] = useState(DEFAULT_ROOT);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileView | null>(null);
+  const [resource, setResource] = useState<ResourceView | null>(null);
   const [pending, setPending] = useState<Edit[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ Examples: true });
 
   async function doLoad(target = root) {
     setError(null);
@@ -23,6 +44,7 @@ export function App() {
       setArtifacts(summary.artifacts);
       setSelected(null);
       setProfile(null);
+      setResource(null);
       setPending([]);
     } catch (e) {
       setError(String(e));
@@ -32,15 +54,16 @@ export function App() {
   }
 
   async function openArtifact(a: Artifact) {
-    if (!a.supported) return;
     setError(null);
     setSelected(a.id);
     setPending([]);
+    setProfile(null);
+    setResource(null);
     try {
-      setProfile(await getProfile(a.id));
+      if (a.editable) setProfile(await getProfile(a.id));
+      else setResource(await getResource(a.id));
     } catch (e) {
       setError(String(e));
-      setProfile(null);
     }
   }
 
@@ -67,7 +90,12 @@ export function App() {
     }
   }
 
-  const grouped = useMemo(() => groupArtifacts(artifacts), [artifacts]);
+  const grouped = useMemo(
+    () => groupArtifacts(artifacts, filter),
+    [artifacts, filter],
+  );
+  const total = artifacts.length;
+  const shown = grouped.reduce((n, [, items]) => n + items.length, 0);
 
   return (
     <div className="app">
@@ -105,44 +133,67 @@ export function App() {
 
       <div className="body">
         <aside className="sidebar">
-          {grouped.map(([type, items]) => (
-            <div key={type}>
-              <div className="group-label">
-                {type} ({items.length})
-              </div>
-              {items.map((a) => (
-                <div
-                  key={a.id}
-                  className={
-                    "artifact" +
-                    (a.id === selected ? " active" : "") +
-                    (a.supported ? "" : " unsupported")
-                  }
-                  onClick={() => openArtifact(a)}
-                >
-                  <span className="name">{a.name}</span>
-                  <span className="meta">
-                    <span className={"badge " + a.language}>{a.language}</span>
-                    <span>{a.id}</span>
-                  </span>
-                </div>
-              ))}
+          {artifacts.length > 0 && (
+            <div className="sidebar-filter">
+              <input
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder={`Filter ${total} artifacts…`}
+                spellCheck={false}
+              />
+              {filter && <span className="filter-count">{shown}</span>}
             </div>
-          ))}
+          )}
+          {grouped.map(([category, items]) => {
+            const isCollapsed = collapsed[category] && !filter;
+            return (
+              <div key={category}>
+                <div
+                  className="group-label clickable"
+                  onClick={() =>
+                    setCollapsed((c) => ({ ...c, [category]: !c[category] }))
+                  }
+                >
+                  <span className="caret">{isCollapsed ? "▸" : "▾"}</span>
+                  {category} ({items.length})
+                </div>
+                {!isCollapsed &&
+                  items.map((a) => (
+                    <div
+                      key={a.id}
+                      className={"artifact" + (a.id === selected ? " active" : "")}
+                      onClick={() => openArtifact(a)}
+                      title={a.id}
+                    >
+                      <span className="name">
+                        {a.title ?? a.name}
+                        {!a.editable && <span className="lock">read-only</span>}
+                      </span>
+                      <span className="meta">
+                        <span className={"badge " + a.language}>{a.language}</span>
+                        <span className="rt">{a.resourceType}</span>
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            );
+          })}
           {artifacts.length === 0 && (
             <div className="group-label">Load an IG to begin.</div>
+          )}
+          {artifacts.length > 0 && shown === 0 && (
+            <div className="group-label">No artifacts match “{filter}”.</div>
           )}
         </aside>
 
         <main className="main">
-          {!profile && <div className="empty">Select a profile to edit.</div>}
-          {profile && (
-            <ProfileEditor
-              profile={profile}
-              pending={pending}
-              onEdit={queueEdit}
-            />
+          {!profile && !resource && (
+            <div className="empty">Select an artifact from the sidebar.</div>
           )}
+          {profile && (
+            <ProfileEditor profile={profile} pending={pending} onEdit={queueEdit} />
+          )}
+          {resource && <ResourceViewer view={resource} />}
           {profile && pending.length > 0 && (
             <div className="pending-bar">
               <span className="count">{pending.length} unsaved change(s)</span>
@@ -161,14 +212,28 @@ export function App() {
   );
 }
 
-function groupArtifacts(artifacts: Artifact[]): [string, Artifact[]][] {
-  const map = new Map<string, Artifact[]>();
+function groupArtifacts(
+  artifacts: Artifact[],
+  filter: string,
+): [ArtifactCategory, Artifact[]][] {
+  const q = filter.trim().toLowerCase();
+  const map = new Map<ArtifactCategory, Artifact[]>();
   for (const a of artifacts) {
-    const arr = map.get(a.resourceType) ?? [];
+    if (
+      q &&
+      !(a.title ?? a.name).toLowerCase().includes(q) &&
+      !a.name.toLowerCase().includes(q) &&
+      !a.resourceType.toLowerCase().includes(q) &&
+      !a.id.toLowerCase().includes(q)
+    )
+      continue;
+    const arr = map.get(a.category) ?? [];
     arr.push(a);
-    map.set(a.resourceType, arr);
+    map.set(a.category, arr);
   }
-  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  for (const arr of map.values())
+    arr.sort((a, b) => (a.title ?? a.name).localeCompare(b.title ?? b.name));
+  return CATEGORY_ORDER.filter((c) => map.has(c)).map((c) => [c, map.get(c)!]);
 }
 
 function ProfileEditor({

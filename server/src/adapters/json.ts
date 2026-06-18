@@ -5,12 +5,13 @@ import {
   type Node,
   type JSONPath,
 } from "jsonc-parser";
-import type {
-  Artifact,
-  Edit,
-  ElementView,
-  ProfileView,
-  TextChange,
+import {
+  classify,
+  type Artifact,
+  type Edit,
+  type ElementView,
+  type ProfileView,
+  type TextChange,
 } from "@igb/shared";
 import { collapseToOriginal, type Adapter, type LoadedSource } from "./types.js";
 
@@ -86,15 +87,17 @@ export const jsonAdapter: Adapter = {
     } catch {
       return null;
     }
-    if (!obj || typeof obj !== "object" || !obj.resourceType) return null;
+    if (!obj || typeof obj !== "object" || typeof obj.resourceType !== "string") return null;
+    const c = classify(obj.resourceType, { sdType: obj.type, sdKind: obj.kind });
     return {
       id: src.id,
       filePath: src.filePath,
       language: "json",
       resourceType: obj.resourceType,
       name: obj.name ?? obj.id ?? src.id,
+      title: obj.title,
       url: obj.url,
-      supported: obj.resourceType === "StructureDefinition",
+      ...c,
     };
   },
 
