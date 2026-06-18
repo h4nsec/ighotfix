@@ -287,6 +287,25 @@ function ProfileEditor({
   onEdit: (e: Edit) => void;
 }) {
   const [addExt, setAddExt] = useState(false);
+  const [addEl, setAddEl] = useState(false);
+  // Element paths the user introduced this session that aren't in the
+  // differential yet. They become real rows once an edit is saved.
+  const [addedPaths, setAddedPaths] = useState<string[]>([]);
+
+  const existingPaths = new Set(profile.elements.map((e) => e.id));
+  const extraRows: ElementView[] = addedPaths
+    .filter((p) => !existingPaths.has(p))
+    .map((p) => ({ id: p, path: p, inDifferential: false }));
+
+  function addElement(rawPath: string) {
+    let p = rawPath.trim();
+    if (!p) return;
+    // Auto-prefix with the constrained type when the user omits it.
+    if (!p.startsWith(profile.type + ".") && p !== profile.type) p = `${profile.type}.${p}`;
+    setAddedPaths((prev) => (prev.includes(p) || existingPaths.has(p) ? prev : [...prev, p]));
+    setAddEl(false);
+  }
+
   return (
     <>
       <div className="profile-head">
@@ -296,8 +315,12 @@ function ProfileEditor({
           {profile.derivation ? ` · ${profile.derivation}` : ""}
         </div>
         <div className="head-actions">
+          <button onClick={() => setAddEl((v) => !v)}>+ Element</button>
           <button onClick={() => setAddExt((v) => !v)}>+ Extension</button>
         </div>
+        {addEl && (
+          <AddElementForm type={profile.type} onAdd={addElement} onCancel={() => setAddEl(false)} />
+        )}
         {addExt && (
           <AddExtensionForm
             artifactId={profile.artifactId}
@@ -321,7 +344,7 @@ function ProfileEditor({
           </tr>
         </thead>
         <tbody>
-          {profile.elements.map((el) => (
+          {[...profile.elements, ...extraRows].map((el) => (
             <ElementRow
               key={el.id}
               el={el}
@@ -348,6 +371,38 @@ function ProfileEditor({
         </div>
       )}
     </>
+  );
+}
+
+function AddElementForm({
+  type,
+  onAdd,
+  onCancel,
+}: {
+  type: string;
+  onAdd: (path: string) => void;
+  onCancel: () => void;
+}) {
+  const [path, setPath] = useState("");
+  return (
+    <div className="inline-form">
+      <span className="path-prefix">{type}.</span>
+      <input
+        autoFocus
+        placeholder="element path, e.g. telecom or contact.name"
+        size={32}
+        value={path}
+        onChange={(e) => setPath(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onAdd(path);
+          if (e.key === "Escape") onCancel();
+        }}
+      />
+      <button className="primary" disabled={!path.trim()} onClick={() => onAdd(path)}>
+        Add row
+      </button>
+      <button onClick={onCancel}>Cancel</button>
+    </div>
   );
 }
 
@@ -507,6 +562,7 @@ function ElementRow({
             <>
               {el.path}
               {el.slicing && <span className="badge slicing">sliced</span>}
+              {!el.inDifferential && <span className="badge new">new</span>}
             </>
           )}
           {el.types && el.types.length > 0 && !isExtension && (

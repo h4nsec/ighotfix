@@ -660,6 +660,46 @@ function setNested(obj: any, segs: (string | number)[], value: unknown): void {
   cur[segs[segs.length - 1]] = value;
 }
 
+/**
+ * Resolve FSH soft array indices (`[+]` next, `[=]` current) in a path to
+ * concrete numbers, using a running counter keyed by each array's resolved
+ * prefix. Explicit numeric indices set the counter so later `[+]`/`[=]` follow.
+ * Must be called over a file's assignment rules in document order.
+ */
+function resolveSoftPath(path: string, counters: Map<string, number>): string {
+  let prefix = "";
+  const out: string[] = [];
+  for (const seg of path.split(".")) {
+    const m = /^([^[]+)(\[.+\])?$/.exec(seg);
+    if (!m) {
+      out.push(seg);
+      prefix = prefix ? `${prefix}.${seg}` : seg;
+      continue;
+    }
+    const name = m[1];
+    let outSeg = name;
+    if (m[2]) {
+      const inner = m[2].slice(1, -1);
+      const key = prefix ? `${prefix}.${name}` : name;
+      if (inner === "+") {
+        const idx = (counters.get(key) ?? -1) + 1;
+        counters.set(key, idx);
+        outSeg = `${name}[${idx}]`;
+      } else if (inner === "=") {
+        outSeg = `${name}[${counters.get(key) ?? 0}]`;
+      } else if (/^\d+$/.test(inner)) {
+        counters.set(key, Number(inner));
+        outSeg = `${name}[${inner}]`;
+      } else {
+        outSeg = seg; // slice name or other — leave as-is
+      }
+    }
+    prefix = prefix ? `${prefix}.${outSeg}` : outSeg;
+    out.push(outSeg);
+  }
+  return out.join(".");
+}
+
 /** Normalize a FSH Instance into a FHIR-JSON-ish object. */
 export function instanceToObject(text: string): any {
   const inst = parseEntities(text).find((e) => e.kind === "Instance");
@@ -667,10 +707,11 @@ export function instanceToObject(text: string): any {
   const obj: any = {};
   if (inst.header.InstanceOf) obj.resourceType = inst.header.InstanceOf;
   obj.id = inst.name;
+  const counters = new Map<string, number>();
   for (const rule of inst.rules) {
     const a = asAssignment(rule, text);
     if (!a) continue;
-    setNested(obj, parsePath(a.path), parseFshValue(a.rawValue));
+    setNested(obj, parsePath(resolveSoftPath(a.path, counters)), parseFshValue(a.rawValue));
   }
   return obj;
 }
@@ -691,12 +732,23 @@ function flattenValue(value: unknown, prefix = ""): [string, unknown][] {
   return out;
 }
 
-function instanceRules(text: string): { inst: FshEntity; assigns: { rule: FshRule; a: FshAssignment }[] } | null {
+interface ResolvedAssign {
+  rule: FshRule;
+  a: FshAssignment;
+  /** Path with soft indices resolved to concrete numbers. */
+  rp: string;
+}
+
+function instanceRules(text: string): { inst: FshEntity; assigns: ResolvedAssign[] } | null {
   const inst = parseEntities(text).find((e) => e.kind === "Instance");
   if (!inst) return null;
-  const assigns = inst.rules
-    .map((rule) => ({ rule, a: asAssignment(rule, text) }))
-    .filter((x): x is { rule: FshRule; a: FshAssignment } => x.a !== null);
+  const counters = new Map<string, number>();
+  const assigns: ResolvedAssign[] = [];
+  for (const rule of inst.rules) {
+    const a = asAssignment(rule, text);
+    if (!a) continue;
+    assigns.push({ rule, a, rp: resolveSoftPath(a.path, counters) });
+  }
   return { inst, assigns };
 }
 
@@ -705,11 +757,11 @@ function lastInstanceAnchor(inst: FshEntity): number {
   return last ? last.lineEnd : inst.declEnd;
 }
 
-function arrayCount(assigns: { a: FshAssignment }[], arrPath: string): number {
+function arrayCount(assigns: ResolvedAssign[], arrPath: string): number {
   const re = new RegExp(`^${arrPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\[(\\d+)\\]`);
   let max = -1;
-  for (const { a } of assigns) {
-    const m = re.exec(a.path);
+  for (const { rp } of assigns) {
+    const m = re.exec(rp);
     if (m) max = Math.max(max, Number(m[1]));
   }
   return max + 1;
@@ -723,7 +775,7 @@ function applyInstanceEdit(text: string, edit: Edit): { text: string; desc: stri
 
   if (edit.kind === "setValue") {
     if (edit.value === null) return applyInstanceEdit(text, { ...edit, kind: "removeValue" } as Edit);
-    const found = assigns.find((x) => x.a.path === edit.path);
+    const found = assigns.find((x) => x.rp === edit.path);
     const leaf = leafOf(edit.path);
     if (found) {
       const v = serializeFshValue(leaf, edit.value, found.a.rawValue);
@@ -752,24 +804,24 @@ function applyInstanceEdit(text: string, edit: Edit): { text: string; desc: stri
     const removedIdx = m ? Number(m[2]) : undefined;
     const edits: { start: number; end: number; newText: string }[] = [];
 
-    for (const { rule, a } of assigns) {
-      const p = a.path;
+    for (const { rule, a, rp } of assigns) {
+      // Match the target by resolved path (so soft-indexed source still matches).
       const isTarget =
-        p === removePath || p.startsWith(removePath + ".") || p.startsWith(removePath + "[");
+        rp === removePath || rp.startsWith(removePath + ".") || rp.startsWith(removePath + "[");
       if (isTarget) {
         const nl = text.indexOf("\n", rule.lineStart);
         edits.push({ start: rule.lineStart, end: nl === -1 ? text.length : nl + 1, newText: "" });
         continue;
       }
-      // Re-index sibling array elements after the removed one.
+      // Re-index sibling array elements after the removed one. Only rewrite raw
+      // numeric indices; soft `[+]`/`[=]` siblings renumber themselves.
       if (arrayPrefix !== undefined && removedIdx !== undefined) {
-        const sib = new RegExp(`^${arrayPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\[(\\d+)\\]`).exec(p);
-        if (sib) {
-          const k = Number(sib[1]);
-          if (k > removedIdx) {
-            const newPath = `${arrayPrefix}[${k - 1}]` + p.slice(`${arrayPrefix}[${k}]`.length);
-            edits.push({ start: rule.pathSpan.start, end: rule.pathSpan.end, newText: newPath });
-          }
+        const sibR = new RegExp(`^${arrayPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\[(\\d+)\\]`).exec(rp);
+        const sibRaw = new RegExp(`^${arrayPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\[(\\d+)\\]`).exec(a.path);
+        if (sibR && sibRaw && Number(sibR[1]) > removedIdx) {
+          const k = Number(sibRaw[1]);
+          const newPath = `${arrayPrefix}[${k - 1}]` + a.path.slice(`${arrayPrefix}[${k}]`.length);
+          edits.push({ start: rule.pathSpan.start, end: rule.pathSpan.end, newText: newPath });
         }
       }
     }

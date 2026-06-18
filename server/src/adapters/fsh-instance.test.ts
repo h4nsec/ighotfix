@@ -98,6 +98,37 @@ describe("fsh instance edits", () => {
     expect(out).toContain("* rest[0].resource[0].interaction[1].code = #create");
   });
 
+  it("resolves soft indices ([+]/[=]) when normalizing", () => {
+    const text = `Instance: c
+InstanceOf: CapabilityStatement
+* rest[0].mode = #server
+* rest[0].resource[+].type = #Patient
+* rest[0].resource[=].interaction[+].code = #read
+* rest[0].resource[=].interaction[+].code = #search-type
+* rest[0].resource[+].type = #Observation
+`;
+    const obj = instanceToObject(text);
+    expect(obj.rest[0].resource[0].type).toBe("Patient");
+    expect(obj.rest[0].resource[0].interaction.map((i: any) => i.code)).toEqual(["read", "search-type"]);
+    expect(obj.rest[0].resource[1].type).toBe("Observation");
+  });
+
+  it("edits a soft-indexed array correctly (count + reindex)", () => {
+    const text = `Instance: s
+InstanceOf: SearchParameter
+* base[+] = #Observation
+* base[+] = #Condition
+`;
+    // addValue must append index 2 even though the source uses [+]
+    const added = applyChanges(text, fshAdapter.computeChanges(src(text), [addV("base", "Patient")]));
+    expect(added).toContain("* base[2] = #Patient");
+    // removeValue targets the resolved index; soft-indexed siblings stay [+]
+    const removed = applyChanges(text, fshAdapter.computeChanges(src(text), [rmV("base[0]")]));
+    expect(removed).not.toContain("#Observation");
+    expect(removed).toContain("* base[+] = #Condition"); // unchanged, auto-renumbers to 0
+    expect(instanceToObject(removed).base).toEqual(["Condition"]);
+  });
+
   it("removes a nested array element with its children", () => {
     const text = `Instance: c
 InstanceOf: CapabilityStatement

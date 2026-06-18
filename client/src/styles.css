@@ -388,6 +388,8 @@ td .flag { color: var(--accent); font-size: 11px; margin-left: 6px; }
 .badge.slice { color: #4aa3ff; }
 .badge.slicing { color: #e0a44a; }
 .badge.ext { color: #c08bff; }
+.badge.new { color: var(--good); border-color: var(--good); }
+.path-prefix { color: var(--muted); font-family: var(--mono); font-size: 12px; }
 .slice-marker { color: var(--muted); margin-right: 4px; }
 td.slice-row { padding-left: 22px; }
 .ext-url {
