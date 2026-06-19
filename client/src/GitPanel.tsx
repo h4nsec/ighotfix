@@ -38,7 +38,7 @@ export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChange
   }
 
   useEffect(() => {
-    refresh().catch((e) => setOutput(String(e)));
+    refresh().catch((e) => setOutput(e instanceof Error ? e.message : String(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -51,7 +51,7 @@ export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChange
       if (r.ok) after?.();
       await refresh();
     } catch (e) {
-      setOutput(String(e));
+      setOutput(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }

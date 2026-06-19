@@ -24,7 +24,7 @@ export function FolderPicker({
     try {
       setResult(await browse(path));
     } catch (e) {
-      setError(String(e));
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }

@@ -13,6 +13,8 @@ import { browse } from "./browse.js";
 import { buildResourceView } from "./resource.js";
 import { createArtifact, type CreateRequest } from "./create.js";
 import * as gitOps from "./git.js";
+import { sendErr, friendlyMessage } from "./errors.js";
+import { stat } from "node:fs/promises";
 import {
   adapterForExtension,
   applyChanges,
@@ -34,7 +36,7 @@ app.get("/api/browse", async (req, res) => {
   try {
     res.json(await browse(dir));
   } catch (err) {
-    res.status(400).json({ error: String(err) });
+    sendErr(res, 400, err);
   }
 });
 
@@ -44,45 +46,61 @@ app.get("/api/home", (_req, res) => {
 
 app.post("/api/load", async (req, res) => {
   const { root } = req.body as LoadRequest;
-  if (!root) return res.status(400).json({ error: "root is required" });
+  if (!root) return res.status(400).json({ error: "Enter a path to an IG folder." });
+  const resolved = path.resolve(root);
   try {
-    const summary = await loadIg(path.resolve(root));
-    currentRoot = path.resolve(root);
+    const info = await stat(resolved).catch(() => null);
+    if (!info) {
+      return res.status(400).json({ error: `Folder not found: ${resolved}` });
+    }
+    if (!info.isDirectory()) {
+      return res.status(400).json({ error: `Not a folder: ${resolved}. Pick the IG directory, not a file.` });
+    }
+    const summary = await loadIg(resolved);
+    currentRoot = resolved;
+    if (summary.artifacts.length === 0) {
+      return res.json({ ...summary, warning: "No FHIR artifacts (.fsh, .json, .xml) found in this folder." });
+    }
     res.json(summary);
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    sendErr(res, 500, err);
   }
 });
 
 app.get("/api/profile", async (req, res) => {
   const artifactId = String(req.query.artifactId ?? "");
-  if (!currentRoot) return res.status(409).json({ error: "no IG loaded" });
+  if (!currentRoot) return res.status(409).json({ error: "Load an IG first." });
   try {
     const src = await loadSource(currentRoot, idToRel(artifactId));
-    if (!src) return res.status(404).json({ error: "not found" });
+    if (!src) return res.status(404).json({ error: `Artifact not found: ${artifactId}` });
     const adapter = adapterForExtension(path.extname(src.filePath));
     const artifact = adapter?.describe(src);
-    if (!adapter || !artifact) return res.status(404).json({ error: "not FHIR" });
+    if (!adapter || !artifact)
+      return res.status(404).json({ error: `${artifactId} isn't a recognised FHIR resource.` });
     const view: ProfileView | null = adapter.toProfileView(src, artifact);
-    if (!view) return res.status(422).json({ error: "not a profile" });
+    if (!view)
+      return res.status(422).json({
+        error: `${artifact.name} is a ${artifact.resourceType}, not an editable profile.`,
+      });
     res.json(view);
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    sendErr(res, 500, err);
   }
 });
 
 app.get("/api/resource", async (req, res) => {
   const artifactId = String(req.query.artifactId ?? "");
-  if (!currentRoot) return res.status(409).json({ error: "no IG loaded" });
+  if (!currentRoot) return res.status(409).json({ error: "Load an IG first." });
   try {
     const src = await loadSource(currentRoot, idToRel(artifactId));
-    if (!src) return res.status(404).json({ error: "not found" });
+    if (!src) return res.status(404).json({ error: `Artifact not found: ${artifactId}` });
     const adapter = adapterForExtension(path.extname(src.filePath));
     const artifact = adapter?.describe(src);
-    if (!artifact) return res.status(404).json({ error: "not FHIR" });
+    if (!artifact)
+      return res.status(404).json({ error: `${artifactId} isn't a recognised FHIR resource.` });
     res.json(buildResourceView(src, artifact));
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    sendErr(res, 500, err);
   }
 });
 
@@ -90,7 +108,7 @@ app.get("/api/resource", async (req, res) => {
 
 function requireRoot(res: express.Response): string | null {
   if (!currentRoot) {
-    res.status(409).json({ error: "no IG loaded" });
+    res.status(409).json({ error: "Load an IG first." });
     return null;
   }
   return currentRoot;
@@ -123,11 +141,12 @@ app.get("/api/git/diff", async (req, res) => {
 app.post("/api/git/clone", async (req, res) => {
   // Clone does not require a loaded IG — it is how you obtain one.
   const { url, parent } = req.body ?? {};
-  if (!url || !parent) return res.status(400).json({ error: "url and parent are required" });
+  if (!url) return res.status(400).json({ error: "Enter a repository URL." });
+  if (!parent) return res.status(400).json({ error: "Choose a destination folder." });
   try {
     res.json(await gitOps.clone(String(url), path.resolve(String(parent))));
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    sendErr(res, 500, err);
   }
 });
 
@@ -156,31 +175,32 @@ app.post("/api/git/:action", async (req, res) => {
       case "unstageAll":
         return res.json(await gitOps.unstageAll(root));
       default:
-        return res.status(404).json({ error: `unknown git action: ${action}` });
+        return res.status(404).json({ error: `Unknown git action: ${action}` });
     }
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    sendErr(res, 500, err);
   }
 });
 
 app.post("/api/create", async (req, res) => {
-  if (!currentRoot) return res.status(409).json({ error: "no IG loaded" });
+  if (!currentRoot) return res.status(409).json({ error: "Load an IG first." });
   try {
     const result = await createArtifact(currentRoot, req.body as CreateRequest);
     res.json(result);
   } catch (err) {
-    res.status(400).json({ error: String(err instanceof Error ? err.message : err) });
+    sendErr(res, 400, err);
   }
 });
 
 app.post("/api/edits", async (req, res) => {
   const { artifactId, edits, write } = req.body as ApplyEditsRequest;
-  if (!currentRoot) return res.status(409).json({ error: "no IG loaded" });
+  if (!currentRoot) return res.status(409).json({ error: "Load an IG first." });
   try {
     const src = await loadSource(currentRoot, idToRel(artifactId));
-    if (!src) return res.status(404).json({ error: "not found" });
+    if (!src) return res.status(404).json({ error: `Artifact not found: ${artifactId}` });
     const adapter = adapterForExtension(path.extname(src.filePath));
-    if (!adapter) return res.status(404).json({ error: "no adapter" });
+    if (!adapter)
+      return res.status(404).json({ error: `No editor for ${path.extname(src.filePath)} files.` });
 
     const changes = adapter.computeChanges(src, edits);
     const text = applyChanges(src.text, changes);
@@ -189,10 +209,10 @@ app.post("/api/edits", async (req, res) => {
       await writeFile(src.filePath, text, "utf8");
     }
 
-    const result: EditResult = { artifactId, text, changes };
+    const result: EditResult = { artifactId, text, changes, applied: changes.length };
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    sendErr(res, 500, err);
   }
 });
 

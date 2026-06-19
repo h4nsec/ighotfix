@@ -7,13 +7,32 @@ import type {
   ResourceView,
 } from "@igb/shared";
 
+/** Extract a human-readable error message from a failed response. */
+async function errorFrom(res: Response): Promise<string> {
+  try {
+    const data = await res.json();
+    if (data?.error) return String(data.error);
+  } catch {
+    // Not JSON (e.g. a proxy error page) — fall through.
+  }
+  if (res.status === 0 || res.status >= 500) {
+    return `Server error (${res.status}). Is the backend running?`;
+  }
+  return res.statusText || `Request failed (${res.status}).`;
+}
+
 async function jpost<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error("Can't reach the server. Make sure the backend is running.");
+  }
+  if (!res.ok) throw new Error(await errorFrom(res));
   return res.json();
 }
 
@@ -35,10 +54,8 @@ export interface BrowseResult {
   igMarkers: string[];
 }
 
-export async function browse(path: string): Promise<BrowseResult> {
-  const res = await fetch(`/api/browse?path=${encodeURIComponent(path)}`);
-  if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
-  return res.json();
+export function browse(path: string): Promise<BrowseResult> {
+  return jget<BrowseResult>(`/api/browse?path=${encodeURIComponent(path)}`);
 }
 
 export async function getHome(): Promise<string> {
@@ -91,8 +108,13 @@ export interface GitOpResult {
 }
 
 async function jget<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch {
+    throw new Error("Can't reach the server. Make sure the backend is running.");
+  }
+  if (!res.ok) throw new Error(await errorFrom(res));
   return res.json();
 }
 
@@ -114,16 +136,12 @@ export const gitUnstageAll = () => jpost<GitOpResult>("/api/git/unstageAll", {})
 export const gitClone = (url: string, parent: string) =>
   jpost<GitOpResult & { path?: string }>("/api/git/clone", { url, parent });
 
-export async function getProfile(artifactId: string): Promise<ProfileView> {
-  const res = await fetch(`/api/profile?artifactId=${encodeURIComponent(artifactId)}`);
-  if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
-  return res.json();
+export function getProfile(artifactId: string): Promise<ProfileView> {
+  return jget<ProfileView>(`/api/profile?artifactId=${encodeURIComponent(artifactId)}`);
 }
 
-export async function getResource(artifactId: string): Promise<ResourceView> {
-  const res = await fetch(`/api/resource?artifactId=${encodeURIComponent(artifactId)}`);
-  if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
-  return res.json();
+export function getResource(artifactId: string): Promise<ResourceView> {
+  return jget<ResourceView>(`/api/resource?artifactId=${encodeURIComponent(artifactId)}`);
 }
 
 export function applyEdits(

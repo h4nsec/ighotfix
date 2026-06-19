@@ -360,6 +360,37 @@ td .flag { color: var(--accent); font-size: 11px; margin-left: 6px; }
 
 .error { color: #ff7a7a; padding: 10px 14px; }
 
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+.banner .banner-icon { font-size: 14px; flex-shrink: 0; }
+.banner .banner-msg { flex: 1; word-break: break-word; }
+.banner .banner-x {
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.banner .banner-x:hover { opacity: 1; background: transparent; }
+.error-banner {
+  background: rgba(255, 122, 122, 0.12);
+  color: #ff9d9d;
+  border-bottom-color: rgba(255, 122, 122, 0.3);
+}
+.notice-banner {
+  background: rgba(74, 163, 255, 0.1);
+  color: var(--accent);
+  border-bottom-color: var(--accent-dim);
+}
+
 .head-actions { margin-top: 8px; }
 .profile-head { position: relative; }
 

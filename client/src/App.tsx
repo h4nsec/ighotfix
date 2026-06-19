@@ -20,6 +20,11 @@ import { CloneDialog } from "./CloneDialog.js";
 
 const DEFAULT_ROOT = "C:/Users/User/Documents/IG Builder/fixtures/sample-ig";
 
+/** A clean message from any thrown value (drops a leading "Error:"). */
+function errMsg(e: unknown): string {
+  return (e instanceof Error ? e.message : String(e)).replace(/^Error:\s*/, "");
+}
+
 const CATEGORY_ORDER: ArtifactCategory[] = [
   "Profiles",
   "Extensions",
@@ -38,6 +43,7 @@ export function App() {
   const [resource, setResource] = useState<ResourceView | null>(null);
   const [pending, setPending] = useState<Edit[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -57,6 +63,7 @@ export function App() {
 
   async function doLoad(target = root) {
     setError(null);
+    setNotice(null);
     setBusy(true);
     try {
       const summary = await loadIg(target);
@@ -65,9 +72,10 @@ export function App() {
       setProfile(null);
       setResource(null);
       setPending([]);
+      if (summary.warning) setNotice(summary.warning);
       refreshGit();
     } catch (e) {
-      setError(String(e));
+      setError(`Couldn't load IG — ${errMsg(e)}`);
     } finally {
       setBusy(false);
     }
@@ -75,6 +83,7 @@ export function App() {
 
   async function openArtifact(a: Artifact) {
     setError(null);
+    setNotice(null);
     setSelected(a.id);
     setPending([]);
     setProfile(null);
@@ -83,7 +92,7 @@ export function App() {
       if (a.editable) setProfile(await getProfile(a.id));
       else setResource(await getResource(a.id));
     } catch (e) {
-      setError(String(e));
+      setError(`Couldn't open ${a.title ?? a.name} — ${errMsg(e)}`);
     }
   }
 
@@ -108,13 +117,19 @@ export function App() {
     if (!selected || pending.length === 0) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
-      await applyEdits(selected, pending, true);
+      const result = await applyEdits(selected, pending, true);
       await reopen(selected);
       setPending([]);
       refreshGit();
+      if (result.applied === 0) {
+        setNotice(
+          "No changes were written — the targeted element may not exist or the source already matches.",
+        );
+      }
     } catch (e) {
-      setError(String(e));
+      setError(`Couldn't write changes — ${errMsg(e)}`);
     } finally {
       setBusy(false);
     }
@@ -209,7 +224,24 @@ export function App() {
         />
       )}
 
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div className="banner error-banner" role="alert">
+          <span className="banner-icon">⚠</span>
+          <span className="banner-msg">{error}</span>
+          <button className="banner-x" onClick={() => setError(null)} title="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
+      {notice && (
+        <div className="banner notice-banner">
+          <span className="banner-icon">ℹ</span>
+          <span className="banner-msg">{notice}</span>
+          <button className="banner-x" onClick={() => setNotice(null)} title="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="body">
         <aside className="sidebar">

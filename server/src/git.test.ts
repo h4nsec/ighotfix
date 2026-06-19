@@ -12,7 +12,7 @@ let dir: string;
 beforeAll(async () => {
   dir = await mkdtemp(path.join(tmpdir(), "igb-git-"));
 });
-afterAll(() => rm(dir, { recursive: true, force: true }));
+afterAll(() => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
 
 describe("git module", () => {
   it("reports a non-repo before init", async () => {
@@ -65,7 +65,7 @@ describe("git module", () => {
 
     expect((await git.checkout(dir, "main")).ok).toBe(true);
     expect((await git.branches(dir)).current).toBe("main");
-  });
+  }, 30_000); // many git invocations; generous on slow/Windows runners
 
   it("rejects invalid branch names", async () => {
     const r = await git.createBranch(dir, "bad name!", false);

@@ -92,6 +92,8 @@ export function classify(
 export interface IgSummary {
   root: string;
   artifacts: Artifact[];
+  /** Non-fatal note, e.g. when no FHIR artifacts were found. */
+  warning?: string;
 }
 
 /* ------------------------------------------------------------------ *
@@ -315,6 +317,8 @@ export interface EditResult {
   text: string;
   /** Human-readable diff hunks for preview. */
   changes: TextChange[];
+  /** Number of source changes actually produced (0 = nothing matched). */
+  applied?: number;
 }
 
 export interface TextChange {
