@@ -77,4 +77,20 @@ describe("git module", () => {
     const r = await git.commit(dir, "   ");
     expect(r.ok).toBe(false);
   });
+
+  it("clones into a destination folder that doesn't exist yet", async () => {
+    // `dir` is a committed repo from the lifecycle test; clone it into a nested,
+    // not-yet-created parent to exercise the mkdir path.
+    const parent = path.join(dir, "deeper", "dest");
+    const r = await git.clone(dir, parent);
+    expect(r.ok).toBe(true);
+    expect(r.path).toBeTruthy();
+    expect((await git.status(r.path!)).isRepo).toBe(true);
+  }, 30_000);
+
+  it("reports a reason (never blank) when a clone fails", async () => {
+    const r = await git.clone(path.join(dir, "not-a-repo"), path.join(dir, "dest2"));
+    expect(r.ok).toBe(false);
+    expect(r.output.trim().length).toBeGreaterThan(0);
+  }, 30_000);
 });

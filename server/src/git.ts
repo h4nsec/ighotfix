@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 const execFileP = promisify(execFile);
@@ -24,9 +25,11 @@ async function git(root: string, args: string[], timeout = 30_000): Promise<GitR
     });
     return { stdout, stderr, code: 0 };
   } catch (e: any) {
+    // Prefer git's stderr, but fall back to the spawn error message when git
+    // never ran (e.g. a non-existent cwd produces empty stdout/stderr).
     return {
       stdout: e?.stdout ?? "",
-      stderr: e?.stderr ?? (e?.message ?? String(e)),
+      stderr: e?.stderr || e?.message || String(e),
       code: typeof e?.code === "number" ? e.code : 1,
     };
   }
@@ -270,6 +273,21 @@ export async function clone(url: string, parentDir: string): Promise<CloneResult
   if (existsSync(target)) {
     return { ok: false, output: `Destination already exists: ${target}` };
   }
+  // Create the destination folder if it doesn't exist yet, so git can clone into it.
+  try {
+    await mkdir(parentDir, { recursive: true });
+  } catch (e: any) {
+    return { ok: false, output: `Can't create destination folder: ${e?.message ?? String(e)}` };
+  }
+
   const r = await git(parentDir, ["clone", "--", url.trim(), name], 180_000);
-  return { ok: r.code === 0, output: (r.stdout + "\n" + r.stderr).trim(), path: r.code === 0 ? target : undefined };
+  const output = (r.stdout + "\n" + r.stderr).trim();
+  if (r.code === 0) return { ok: true, output: output || "Cloned.", path: target };
+  return {
+    ok: false,
+    output:
+      output ||
+      `git clone failed (exit code ${r.code}). Check the URL is correct and reachable, ` +
+        `and that the repo is public (private repos that need a login aren't supported here).`,
+  };
 }
