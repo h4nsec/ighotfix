@@ -44,11 +44,16 @@ export function CloneDialog({
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={() => !busy && onClose()}>
       <div className="modal small" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>Clone from remote</h3>
-          <button onClick={onClose}>✕</button>
+          <h3>
+            Clone from remote
+            {busy && <span className="working">cloning…</span>}
+          </h3>
+          <button onClick={onClose} disabled={busy} title={busy ? "Clone in progress" : "Close"}>
+            ✕
+          </button>
         </div>
 
         <div className="new-form">

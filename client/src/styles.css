@@ -519,6 +519,28 @@ td.slice-row { padding-left: 22px; }
   color: var(--accent);
   font-weight: 400;
 }
+.modal-head .working {
+  margin-left: 10px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--warn);
+}
+.modal-head .working::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  vertical-align: -1px;
+  animation: spin 0.7s linear infinite;
+}
+.modal-head button:disabled { opacity: 0.35; cursor: not-allowed; }
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 .git-section { margin-bottom: 16px; }
 .git-section textarea,
 .git-section input,

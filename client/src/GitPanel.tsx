@@ -66,7 +66,7 @@ export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChange
   const stagedCount = status?.files?.filter((f) => f.staged).length ?? 0;
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={() => !busy && onClose()}>
       <div className="modal git" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>
@@ -74,8 +74,11 @@ export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChange
             {status?.isRepo && status.branch && (
               <span className="branch-chip">⎇ {status.branch}</span>
             )}
+            {busy && <span className="working">working…</span>}
           </h3>
-          <button onClick={onClose}>✕</button>
+          <button onClick={onClose} disabled={busy} title={busy ? "Operation in progress" : "Close"}>
+            ✕
+          </button>
         </div>
 
         {status && !status.isRepo && (
