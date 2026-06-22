@@ -28,7 +28,7 @@ function inferDir(artifacts: Artifact[]): string {
 
 function inferLanguage(artifacts: Artifact[]): "json" | "xml" | "fsh" {
   const counts: Record<string, number> = { xml: 0, json: 0, fsh: 0 };
-  for (const a of artifacts) counts[a.language] = (counts[a.language] ?? 0) + 1;
+  for (const a of artifacts) if (a.language) counts[a.language] = (counts[a.language] ?? 0) + 1;
   const order: ("fsh" | "xml" | "json")[] = ["fsh", "xml", "json"];
   return order.sort((a, b) => counts[b] - counts[a])[0];
 }

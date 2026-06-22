@@ -94,6 +94,7 @@ export const jsonAdapter: Adapter = {
       id: src.id,
       filePath: src.filePath,
       language: "json",
+      format: "json",
       resourceType: obj.resourceType,
       name: obj.name ?? obj.id ?? src.id,
       title: obj.title,

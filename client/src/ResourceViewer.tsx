@@ -2,7 +2,13 @@ import { useState } from "react";
 import type { ResourceView } from "@igb/shared";
 
 /** Read-only viewer for non-editable artifacts (terminology, capabilities, examples). */
-export function ResourceViewer({ view }: { view: ResourceView }) {
+export function ResourceViewer({
+  view,
+  onEditSource,
+}: {
+  view: ResourceView;
+  onEditSource?: () => void;
+}) {
   const [showRaw, setShowRaw] = useState(false);
 
   return (
@@ -19,7 +25,8 @@ export function ResourceViewer({ view }: { view: ResourceView }) {
           <button onClick={() => setShowRaw((v) => !v)}>
             {showRaw ? "Hide source" : "View source"}
           </button>
-          <span className="readonly-tag">read-only</span>
+          {onEditSource && <button onClick={onEditSource}>Edit source</button>}
+          <span className="readonly-tag">no structured editor</span>
         </div>
       </div>
 

@@ -8,7 +8,7 @@ import type {
   LoadRequest,
   ProfileView,
 } from "@igb/shared";
-import { loadIg, loadSource } from "./loader.js";
+import { loadIg, loadSource, readRaw } from "./loader.js";
 import { browse } from "./browse.js";
 import { buildResourceView } from "./resource.js";
 import { createArtifact, type CreateRequest } from "./create.js";
@@ -99,6 +99,31 @@ app.get("/api/resource", async (req, res) => {
     if (!artifact)
       return res.status(404).json({ error: `${artifactId} isn't a recognised FHIR resource.` });
     res.json(buildResourceView(src, artifact));
+  } catch (err) {
+    sendErr(res, 500, err);
+  }
+});
+
+app.get("/api/file", async (req, res) => {
+  const artifactId = String(req.query.artifactId ?? "");
+  if (!currentRoot) return res.status(409).json({ error: "Load an IG first." });
+  try {
+    const text = await readRaw(currentRoot, idToRel(artifactId));
+    res.json({ artifactId, text });
+  } catch (err) {
+    sendErr(res, 404, err);
+  }
+});
+
+app.post("/api/file", async (req, res) => {
+  const { artifactId, text } = req.body as { artifactId: string; text: string };
+  if (!currentRoot) return res.status(409).json({ error: "Load an IG first." });
+  if (typeof text !== "string") return res.status(400).json({ error: "Missing file text." });
+  try {
+    const src = await loadSource(currentRoot, idToRel(artifactId)).catch(() => null);
+    const filePath = src?.filePath ?? path.join(currentRoot, idToRel(artifactId));
+    await writeFile(filePath, text, "utf8");
+    res.json({ ok: true });
   } catch (err) {
     sendErr(res, 500, err);
   }

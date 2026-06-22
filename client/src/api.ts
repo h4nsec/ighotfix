@@ -211,6 +211,14 @@ export function getResource(artifactId: string): Promise<ResourceView> {
   return jget<ResourceView>(`/api/resource?artifactId=${encodeURIComponent(artifactId)}`);
 }
 
+export function getFile(artifactId: string): Promise<{ artifactId: string; text: string }> {
+  return jget(`/api/file?artifactId=${encodeURIComponent(artifactId)}`);
+}
+
+export function saveFile(artifactId: string, text: string): Promise<{ ok: boolean }> {
+  return jpost<{ ok: boolean }>("/api/file", { artifactId, text });
+}
+
 export function applyEdits(
   artifactId: string,
   edits: Edit[],

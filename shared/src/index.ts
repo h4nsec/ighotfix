@@ -21,6 +21,9 @@ export type ArtifactKind =
   | "operationdefinition"
   | "implementationguide"
   | "example"
+  | "config"
+  | "page"
+  | "file"
   | "other";
 
 export type ArtifactCategory =
@@ -29,6 +32,8 @@ export type ArtifactCategory =
   | "Terminology"
   | "Capabilities"
   | "Implementation Guide"
+  | "Configuration"
+  | "Pages"
   | "Examples"
   | "Other";
 
@@ -38,8 +43,11 @@ export interface Artifact {
   id: string;
   /** Absolute path on disk. */
   filePath: string;
-  language: SourceLanguage;
-  /** FHIR resourceType, e.g. "StructureDefinition", "ValueSet". */
+  /** FHIR source language for adapter-backed artifacts; undefined for plain files. */
+  language?: SourceLanguage;
+  /** Display/syntax format, e.g. "fsh", "json", "xml", "ini", "yaml", "markdown". */
+  format: string;
+  /** FHIR resourceType, e.g. "StructureDefinition"; empty for non-FHIR files. */
   resourceType: string;
   /** Human name (StructureDefinition.name etc.). */
   name: string;
@@ -51,6 +59,33 @@ export interface Artifact {
   category: ArtifactCategory;
   /** True when this artifact has a structured editor (profiles/extensions). */
   editable: boolean;
+}
+
+/** Classify a non-FHIR IG file (config, page, or other) by name/extension. */
+export function classifyFile(
+  fileName: string,
+): { kind: ArtifactKind; category: ArtifactCategory; format: string } | null {
+  const lower = fileName.toLowerCase();
+  const ext = lower.includes(".") ? lower.slice(lower.lastIndexOf(".")) : "";
+  const CONFIG_NAMES = new Set([
+    "ig.ini",
+    "sushi-config.yaml",
+    "sushi-config.yml",
+    "package.json",
+    "package-list.json",
+    "publication-request.json",
+    "menu.xml",
+  ]);
+  if (CONFIG_NAMES.has(lower) || ext === ".ini" || ext === ".yaml" || ext === ".yml") {
+    const format = ext === ".ini" ? "ini" : ext === ".json" ? "json" : ext === ".xml" ? "xml" : "yaml";
+    return { kind: "config", category: "Configuration", format };
+  }
+  if (ext === ".md") return { kind: "page", category: "Pages", format: "markdown" };
+  if (ext === ".txt") return { kind: "file", category: "Other", format: "text" };
+  if (ext === ".json") return { kind: "file", category: "Other", format: "json" };
+  if (ext === ".xml") return { kind: "page", category: "Pages", format: "xml" };
+  if (ext === ".fsh") return { kind: "file", category: "Other", format: "fsh" };
+  return null;
 }
 
 /** Classify a resource into a sidebar category + editability. */

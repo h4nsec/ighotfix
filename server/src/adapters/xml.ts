@@ -94,6 +94,7 @@ export const xmlAdapter: Adapter = {
       id: src.id,
       filePath: src.filePath,
       language: "xml",
+      format: "xml",
       resourceType: rt,
       name: leafValue(child(root, "name")) ?? leafValue(child(root, "id")) ?? src.id,
       title: leafValue(child(root, "title")),

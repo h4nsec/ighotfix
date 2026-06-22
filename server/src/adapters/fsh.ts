@@ -295,6 +295,7 @@ export const fshAdapter: Adapter = {
       id: src.id,
       filePath: src.filePath,
       language: "fsh",
+      format: "fsh",
       resourceType,
       name: instanceName(primary, src.text) ?? primary.name,
       title: stripQuotes(primary.header.Title),

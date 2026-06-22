@@ -12,6 +12,7 @@ import { FLAG_LABELS } from "@igb/shared";
 import { applyEdits, getProfile, getResource, gitStatus, loadIg, type GitStatus } from "./api.js";
 import { FolderPicker } from "./FolderPicker.js";
 import { ResourceViewer } from "./ResourceViewer.js";
+import { TextEditor } from "./TextEditor.js";
 import { SearchParameterEditor } from "./SearchParameterEditor.js";
 import { CapabilityStatementEditor } from "./CapabilityStatementEditor.js";
 import { NewArtifactDialog } from "./NewArtifactDialog.js";
@@ -31,6 +32,8 @@ const CATEGORY_ORDER: ArtifactCategory[] = [
   "Terminology",
   "Capabilities",
   "Implementation Guide",
+  "Configuration",
+  "Pages",
   "Examples",
   "Other",
 ];
@@ -41,6 +44,8 @@ export function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [profile, setProfile] = useState<ProfileView | null>(null);
   const [resource, setResource] = useState<ResourceView | null>(null);
+  const [openArt, setOpenArt] = useState<Artifact | null>(null);
+  const [sourceMode, setSourceMode] = useState(false);
   const [pending, setPending] = useState<Edit[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -59,7 +64,10 @@ export function App() {
       setGit(null);
     }
   }
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ Examples: true });
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({
+    Examples: true,
+    Pages: true,
+  });
 
   async function doLoad(target = root) {
     setError(null);
@@ -85,12 +93,15 @@ export function App() {
     setError(null);
     setNotice(null);
     setSelected(a.id);
+    setOpenArt(a);
     setPending([]);
     setProfile(null);
     setResource(null);
+    setSourceMode(false);
     try {
       if (a.editable) setProfile(await getProfile(a.id));
-      else setResource(await getResource(a.id));
+      else if (a.resourceType) setResource(await getResource(a.id));
+      // Non-FHIR files (resourceType === "") open straight in the text editor.
     } catch (e) {
       setError(`Couldn't open ${a.title ?? a.name} — ${errMsg(e)}`);
     }
@@ -277,13 +288,10 @@ export function App() {
                       onClick={() => openArtifact(a)}
                       title={a.id}
                     >
-                      <span className="name">
-                        {a.title ?? a.name}
-                        {!a.editable && <span className="lock">read-only</span>}
-                      </span>
+                      <span className="name">{a.title ?? a.name}</span>
                       <span className="meta">
-                        <span className={"badge " + a.language}>{a.language}</span>
-                        <span className="rt">{a.resourceType}</span>
+                        <span className={"badge " + a.format}>{a.format}</span>
+                        <span className="rt">{a.resourceType || a.kind}</span>
                       </span>
                     </div>
                   ))}
@@ -299,21 +307,33 @@ export function App() {
         </aside>
 
         <main className="main">
-          {!profile && !resource && (
-            <div className="empty">Select an artifact from the sidebar.</div>
+          {!openArt && <div className="empty">Select an artifact from the sidebar.</div>}
+
+          {/* Non-FHIR files, or "Edit source" on any FHIR resource. */}
+          {openArt && (sourceMode || !openArt.resourceType) && (
+            <TextEditor
+              artifact={openArt}
+              onSaved={() => {
+                refreshGit();
+                setNotice(`Saved ${openArt.name}.`);
+              }}
+              onError={(m) => setError(m)}
+            />
           )}
-          {profile && (
+
+          {!sourceMode && profile && (
             <ProfileEditor profile={profile} pending={pending} onEdit={queueEdit} />
           )}
-          {resource &&
-            (resource.editableType && resource.resourceType === "SearchParameter" ? (
+          {!sourceMode && resource && (
+            resource.editableType && resource.resourceType === "SearchParameter" ? (
               <SearchParameterEditor view={resource} pending={pending} onEdit={queueEdit} />
             ) : resource.editableType && resource.resourceType === "CapabilityStatement" ? (
               <CapabilityStatementEditor view={resource} pending={pending} onEdit={queueEdit} />
             ) : (
-              <ResourceViewer view={resource} />
-            ))}
-          {pending.length > 0 && (
+              <ResourceViewer view={resource} onEditSource={() => setSourceMode(true)} />
+            )
+          )}
+          {!sourceMode && pending.length > 0 && (
             <div className="pending-bar">
               <span className="count">{pending.length} unsaved change(s)</span>
               <span className="spacer" />
