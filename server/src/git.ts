@@ -1,6 +1,6 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 
 const execFileP = promisify(execFile);
@@ -259,6 +259,35 @@ function repoNameFromUrl(url: string): string {
 export interface CloneResult extends GitOpResult {
   /** Absolute path of the cloned working tree, when successful. */
   path?: string;
+  /** True when the clone was cancelled by the caller. */
+  cancelled?: boolean;
+}
+
+/** Kill a child process and its descendants (git spawns helper subprocesses). */
+function killTree(child: ChildProcess): void {
+  if (child.pid === undefined) return;
+  if (process.platform === "win32") {
+    try {
+      spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { windowsHide: true });
+    } catch {
+      child.kill();
+    }
+  } else {
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
+/** Best-effort removal of a partial clone so a retry isn't blocked. */
+function removePartial(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+  } catch {
+    /* leave it; the next clone will report "destination already exists" */
+  }
 }
 
 /** A clone progress update parsed from git's --progress output. */
@@ -279,6 +308,7 @@ export function clone(
   url: string,
   parentDir: string,
   onProgress?: (p: CloneProgress) => void,
+  signal?: AbortSignal,
 ): Promise<CloneResult> {
   if (!url.trim()) return Promise.resolve({ ok: false, output: "A repository URL is required." });
   const name = repoNameFromUrl(url);
@@ -301,7 +331,20 @@ export function clone(
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
       windowsHide: true,
     });
+
     let buf = "";
+    let cancelled = false;
+    const onAbort = () => {
+      cancelled = true;
+      killTree(child);
+    };
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
+    const timer = setTimeout(() => killTree(child), 600_000);
+    timer.unref?.();
+
     child.stderr.on("data", (chunk: Buffer) => {
       const s = chunk.toString();
       buf += s;
@@ -313,10 +356,21 @@ export function clone(
         onProgress?.(m ? { phase: m[1].trim(), percent: Number(m[2]), raw: t } : { raw: t });
       }
     });
-    child.on("error", (err) => resolve({ ok: false, output: err.message }));
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      resolve({ ok: false, output: err.message });
+    });
     child.on("close", (code) => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
       const output = buf.trim();
+      if (cancelled) {
+        removePartial(target);
+        return resolve({ ok: false, cancelled: true, output: "Clone cancelled." });
+      }
       if (code === 0) return resolve({ ok: true, output: output || "Cloned.", path: target });
+      removePartial(target); // git usually self-cleans, but ensure retries aren't blocked
       resolve({
         ok: false,
         output:
@@ -325,7 +379,5 @@ export function clone(
             `(private repos that need a login aren't supported here).`,
       });
     });
-    // Hard ceiling so a hung fetch can't run forever.
-    setTimeout(() => child.kill(), 600_000).unref?.();
   });
 }

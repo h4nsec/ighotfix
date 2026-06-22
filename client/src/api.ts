@@ -139,23 +139,30 @@ export interface CloneProgress {
   raw: string;
 }
 
+export type CloneOutcome = GitOpResult & { path?: string; cancelled?: boolean };
+
 /**
  * Clone a repository, streaming progress to `onProgress`. Resolves with the
- * final result once the clone finishes.
+ * final result once the clone finishes. Pass `signal` to cancel — aborting the
+ * request makes the server kill git and clean up the partial clone.
  */
 export async function gitClone(
   url: string,
   parent: string,
   onProgress?: (p: CloneProgress) => void,
-): Promise<GitOpResult & { path?: string }> {
+  signal?: AbortSignal,
+): Promise<CloneOutcome> {
+  const cancelled: CloneOutcome = { ok: false, cancelled: true, output: "Clone cancelled." };
   let res: Response;
   try {
     res = await fetch("/api/git/clone", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url, parent }),
+      signal,
     });
-  } catch {
+  } catch (e: any) {
+    if (e?.name === "AbortError" || signal?.aborted) return cancelled;
     throw new Error("Can't reach the server. Make sure the backend is running.");
   }
   if (!res.ok || !res.body) throw new Error(await errorFrom(res));
@@ -163,12 +170,18 @@ export async function gitClone(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let final: (GitOpResult & { path?: string }) | null = null;
+  let final: CloneOutcome | null = null;
 
   for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch (e: any) {
+      if (e?.name === "AbortError" || signal?.aborted) return cancelled;
+      throw e;
+    }
+    if (chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream: true });
     const lines = buffer.split("\n");
     buffer = lines.pop() ?? "";
     for (const line of lines) {
@@ -183,7 +196,10 @@ export async function gitClone(
       else if (msg.type === "done") final = msg;
     }
   }
-  if (!final) throw new Error("The clone ended unexpectedly.");
+  if (!final) {
+    if (signal?.aborted) return cancelled;
+    throw new Error("The clone ended unexpectedly.");
+  }
   return final;
 }
 

@@ -146,16 +146,34 @@ app.post("/api/git/clone", async (req, res) => {
   // Stream progress to the client as newline-delimited JSON.
   res.setHeader("Content-Type", "application/x-ndjson");
   res.flushHeaders();
-  const write = (obj: unknown) => res.write(JSON.stringify(obj) + "\n");
+  // If the client disconnects (cancel), abort the clone and kill git.
+  const ac = new AbortController();
+  let finished = false;
+  res.on("close", () => {
+    if (!finished) ac.abort();
+  });
+  const write = (obj: unknown) => {
+    if (res.writableEnded) return;
+    try {
+      res.write(JSON.stringify(obj) + "\n");
+    } catch {
+      /* client went away mid-write */
+    }
+  };
   try {
-    const result = await gitOps.clone(String(url), path.resolve(String(parent)), (p) =>
-      write({ type: "progress", ...p }),
+    const result = await gitOps.clone(
+      String(url),
+      path.resolve(String(parent)),
+      (p) => write({ type: "progress", ...p }),
+      ac.signal,
     );
+    finished = true;
     write({ type: "done", ...result });
   } catch (err) {
+    finished = true;
     write({ type: "done", ok: false, output: friendlyMessage(err) });
   }
-  res.end();
+  if (!res.writableEnded) res.end();
 });
 
 app.post("/api/git/:action", async (req, res) => {

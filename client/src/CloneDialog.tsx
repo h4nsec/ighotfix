@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getHome, gitClone, type CloneProgress } from "./api.js";
 
 /** Clone a remote repository into a destination folder, then load it as an IG. */
@@ -14,6 +14,7 @@ export function CloneDialog({
   const [busy, setBusy] = useState(false);
   const [output, setOutput] = useState<string | null>(null);
   const [progress, setProgress] = useState<CloneProgress | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     getHome()
@@ -28,19 +29,24 @@ export function CloneDialog({
     setBusy(true);
     setOutput(null);
     setProgress(null);
+    const ac = new AbortController();
+    abortRef.current = ac;
     try {
-      const r = await gitClone(url.trim(), parent.trim(), (p) => setProgress(p));
-      if (r.ok && r.path) {
-        onCloned(r.path);
-      } else {
-        setOutput(r.output || "Clone failed.");
-      }
+      const r = await gitClone(url.trim(), parent.trim(), (p) => setProgress(p), ac.signal);
+      if (r.cancelled) setOutput("Clone cancelled.");
+      else if (r.ok && r.path) onCloned(r.path);
+      else setOutput(r.output || "Clone failed.");
     } catch (e) {
       setOutput(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
       setProgress(null);
+      abortRef.current = null;
     }
+  }
+
+  function cancelClone() {
+    abortRef.current?.abort();
   }
 
   return (
@@ -101,12 +107,14 @@ export function CloneDialog({
 
         <div className="picker-foot">
           <span className="picker-hint" />
-          <button onClick={onClose} disabled={busy}>
-            Cancel
+          <button onClick={busy ? cancelClone : onClose}>
+            {busy ? "Cancel clone" : "Cancel"}
           </button>
-          <button className="primary" onClick={clone} disabled={busy || !url.trim() || !parent.trim()}>
-            {busy ? "Cloning…" : "Clone"}
-          </button>
+          {!busy && (
+            <button className="primary" onClick={clone} disabled={!url.trim() || !parent.trim()}>
+              Clone
+            </button>
+          )}
         </div>
       </div>
     </div>
