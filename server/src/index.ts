@@ -143,11 +143,19 @@ app.post("/api/git/clone", async (req, res) => {
   const { url, parent } = req.body ?? {};
   if (!url) return res.status(400).json({ error: "Enter a repository URL." });
   if (!parent) return res.status(400).json({ error: "Choose a destination folder." });
+  // Stream progress to the client as newline-delimited JSON.
+  res.setHeader("Content-Type", "application/x-ndjson");
+  res.flushHeaders();
+  const write = (obj: unknown) => res.write(JSON.stringify(obj) + "\n");
   try {
-    res.json(await gitOps.clone(String(url), path.resolve(String(parent))));
+    const result = await gitOps.clone(String(url), path.resolve(String(parent)), (p) =>
+      write({ type: "progress", ...p }),
+    );
+    write({ type: "done", ...result });
   } catch (err) {
-    sendErr(res, 500, err);
+    write({ type: "done", ok: false, output: friendlyMessage(err) });
   }
+  res.end();
 });
 
 app.post("/api/git/:action", async (req, res) => {

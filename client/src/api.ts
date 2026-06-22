@@ -133,8 +133,59 @@ export const gitStage = (paths: string[]) => jpost<GitOpResult>("/api/git/stage"
 export const gitUnstage = (paths: string[]) => jpost<GitOpResult>("/api/git/unstage", { paths });
 export const gitStageAll = () => jpost<GitOpResult>("/api/git/stageAll", {});
 export const gitUnstageAll = () => jpost<GitOpResult>("/api/git/unstageAll", {});
-export const gitClone = (url: string, parent: string) =>
-  jpost<GitOpResult & { path?: string }>("/api/git/clone", { url, parent });
+export interface CloneProgress {
+  phase?: string;
+  percent?: number;
+  raw: string;
+}
+
+/**
+ * Clone a repository, streaming progress to `onProgress`. Resolves with the
+ * final result once the clone finishes.
+ */
+export async function gitClone(
+  url: string,
+  parent: string,
+  onProgress?: (p: CloneProgress) => void,
+): Promise<GitOpResult & { path?: string }> {
+  let res: Response;
+  try {
+    res = await fetch("/api/git/clone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, parent }),
+    });
+  } catch {
+    throw new Error("Can't reach the server. Make sure the backend is running.");
+  }
+  if (!res.ok || !res.body) throw new Error(await errorFrom(res));
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let final: (GitOpResult & { path?: string }) | null = null;
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let msg: any;
+      try {
+        msg = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (msg.type === "progress") onProgress?.(msg);
+      else if (msg.type === "done") final = msg;
+    }
+  }
+  if (!final) throw new Error("The clone ended unexpectedly.");
+  return final;
+}
 
 export function getProfile(artifactId: string): Promise<ProfileView> {
   return jget<ProfileView>(`/api/profile?artifactId=${encodeURIComponent(artifactId)}`);

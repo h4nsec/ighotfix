@@ -1,7 +1,6 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
 const execFileP = promisify(execFile);
@@ -262,32 +261,71 @@ export interface CloneResult extends GitOpResult {
   path?: string;
 }
 
+/** A clone progress update parsed from git's --progress output. */
+export interface CloneProgress {
+  /** e.g. "Receiving objects", "Resolving deltas", "Updating files". */
+  phase?: string;
+  /** 0–100 for the current phase, when git reports it. */
+  percent?: number;
+  /** The raw progress line. */
+  raw: string;
+}
+
 /**
- * Clone `url` into `parentDir`. Read-only network fetch; prompts are disabled so
- * a private repo fails cleanly instead of hanging.
+ * Clone `url` into `parentDir` (full history). Streams progress via `onProgress`.
+ * Prompts are disabled so a private repo fails cleanly instead of hanging.
  */
-export async function clone(url: string, parentDir: string): Promise<CloneResult> {
-  if (!url.trim()) return { ok: false, output: "A repository URL is required." };
+export function clone(
+  url: string,
+  parentDir: string,
+  onProgress?: (p: CloneProgress) => void,
+): Promise<CloneResult> {
+  if (!url.trim()) return Promise.resolve({ ok: false, output: "A repository URL is required." });
   const name = repoNameFromUrl(url);
   const target = path.join(parentDir, name);
   if (existsSync(target)) {
-    return { ok: false, output: `Destination already exists: ${target}` };
+    return Promise.resolve({ ok: false, output: `Destination already exists: ${target}` });
   }
-  // Create the destination folder if it doesn't exist yet, so git can clone into it.
   try {
-    await mkdir(parentDir, { recursive: true });
+    mkdirSync(parentDir, { recursive: true });
   } catch (e: any) {
-    return { ok: false, output: `Can't create destination folder: ${e?.message ?? String(e)}` };
+    return Promise.resolve({
+      ok: false,
+      output: `Can't create destination folder: ${e?.message ?? String(e)}`,
+    });
   }
 
-  const r = await git(parentDir, ["clone", "--", url.trim(), name], 180_000);
-  const output = (r.stdout + "\n" + r.stderr).trim();
-  if (r.code === 0) return { ok: true, output: output || "Cloned.", path: target };
-  return {
-    ok: false,
-    output:
-      output ||
-      `git clone failed (exit code ${r.code}). Check the URL is correct and reachable, ` +
-        `and that the repo is public (private repos that need a login aren't supported here).`,
-  };
+  return new Promise<CloneResult>((resolve) => {
+    const child = spawn("git", ["clone", "--progress", "--", url.trim(), name], {
+      cwd: parentDir,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      windowsHide: true,
+    });
+    let buf = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      const s = chunk.toString();
+      buf += s;
+      // git emits progress on stderr, updating a line with \r.
+      for (const line of s.split(/[\r\n]+/)) {
+        const t = line.trim();
+        if (!t) continue;
+        const m = /([A-Za-z][A-Za-z ]+):\s+(\d+)%/.exec(t);
+        onProgress?.(m ? { phase: m[1].trim(), percent: Number(m[2]), raw: t } : { raw: t });
+      }
+    });
+    child.on("error", (err) => resolve({ ok: false, output: err.message }));
+    child.on("close", (code) => {
+      const output = buf.trim();
+      if (code === 0) return resolve({ ok: true, output: output || "Cloned.", path: target });
+      resolve({
+        ok: false,
+        output:
+          output ||
+          `git clone failed (exit code ${code}). Check the URL is correct, reachable, and public ` +
+            `(private repos that need a login aren't supported here).`,
+      });
+    });
+    // Hard ceiling so a hung fetch can't run forever.
+    setTimeout(() => child.kill(), 600_000).unref?.();
+  });
 }

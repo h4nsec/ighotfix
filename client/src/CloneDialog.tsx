@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getHome, gitClone } from "./api.js";
+import { getHome, gitClone, type CloneProgress } from "./api.js";
 
 /** Clone a remote repository into a destination folder, then load it as an IG. */
 export function CloneDialog({
@@ -13,6 +13,7 @@ export function CloneDialog({
   const [parent, setParent] = useState("");
   const [busy, setBusy] = useState(false);
   const [output, setOutput] = useState<string | null>(null);
+  const [progress, setProgress] = useState<CloneProgress | null>(null);
 
   useEffect(() => {
     getHome()
@@ -26,14 +27,19 @@ export function CloneDialog({
   async function clone() {
     setBusy(true);
     setOutput(null);
+    setProgress(null);
     try {
-      const r = await gitClone(url.trim(), parent.trim());
-      setOutput(r.output || (r.ok ? "Cloned." : "Failed."));
-      if (r.ok && r.path) onCloned(r.path);
+      const r = await gitClone(url.trim(), parent.trim(), (p) => setProgress(p));
+      if (r.ok && r.path) {
+        onCloned(r.path);
+      } else {
+        setOutput(r.output || "Clone failed.");
+      }
     } catch (e) {
-      setOutput(String(e instanceof Error ? e.message : e));
+      setOutput(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -69,6 +75,22 @@ export function CloneDialog({
             credential prompt will fail rather than hang.
           </div>
         </div>
+
+        {busy && (
+          <div className="clone-progress">
+            <div className="clone-progress-label">
+              <span>{progress?.phase ?? "Connecting…"}</span>
+              {progress?.percent != null && <span>{progress.percent}%</span>}
+            </div>
+            <div className="progress-track">
+              <div
+                className={"progress-fill" + (progress?.percent == null ? " indeterminate" : "")}
+                style={progress?.percent != null ? { width: `${progress.percent}%` } : undefined}
+              />
+            </div>
+            {progress?.raw && <div className="clone-progress-raw">{progress.raw}</div>}
+          </div>
+        )}
 
         {output && <pre className="git-output">{output}</pre>}
 
