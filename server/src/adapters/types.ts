@@ -12,6 +12,8 @@ export interface LoadedSource {
   filePath: string;
   language: SourceLanguage;
   text: string;
+  /** Pre-resolved base type snapshot elements (JSON) for profiles that lack their own snapshot. */
+  baseSnapshotJson?: any[];
 }
 
 /**

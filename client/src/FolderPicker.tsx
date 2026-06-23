@@ -1,10 +1,27 @@
 import { useEffect, useState } from "react";
 import { browse, getHome, type BrowseResult } from "./api.js";
 
-/**
- * A server-backed folder navigator. Lets the user walk the filesystem (drives →
- * folders) and pick an IG directory instead of typing an absolute path.
- */
+function parseBreadcrumbs(path: string): { label: string; path: string }[] {
+  if (!path) return [];
+  const norm = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  const parts = norm.split("/").filter(Boolean);
+  if (!parts.length) return [];
+
+  const isDrive = /^[A-Za-z]:$/.test(parts[0]);
+
+  return parts.map((label, i) => {
+    let built: string;
+    if (i === 0 && isDrive) {
+      built = label + "/";
+    } else if (isDrive) {
+      built = parts[0] + "/" + parts.slice(1, i + 1).join("/");
+    } else {
+      built = "/" + parts.slice(0, i + 1).join("/");
+    }
+    return { label, path: built };
+  });
+}
+
 export function FolderPicker({
   initialPath,
   onPick,
@@ -43,6 +60,8 @@ export function FolderPicker({
     (result.igMarkers.length > 0 ||
       result.fileCounts.fsh + result.fileCounts.json + result.fileCounts.xml > 0);
 
+  const crumbs = result?.path ? parseBreadcrumbs(result.path) : [];
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -51,29 +70,58 @@ export function FolderPicker({
           <button onClick={onClose}>✕</button>
         </div>
 
-        <div className="picker-path">
-          <button
-            disabled={!result || result.parent === null}
-            onClick={() => result?.parent !== null && go(result!.parent ?? "")}
-            title="Up one level"
-          >
-            ↑ Up
-          </button>
-          <code>{result?.path || "Drives"}</code>
+        <div className="picker-breadcrumbs">
+          {crumbs.length === 0 ? (
+            <span className="picker-crumb current">Computer</span>
+          ) : (
+            <>
+              <button
+                className="picker-root-btn"
+                onClick={() => go("")}
+                title="Browse drives"
+              >
+                ⊞
+              </button>
+              {crumbs.map((crumb, i) => (
+                <span key={crumb.path} style={{ display: "contents" }}>
+                  <span className="picker-sep">›</span>
+                  <button
+                    className={"picker-crumb" + (i === crumbs.length - 1 ? " current" : "")}
+                    onClick={() => i < crumbs.length - 1 && go(crumb.path)}
+                    disabled={i === crumbs.length - 1}
+                    title={crumb.path}
+                  >
+                    {crumb.label}
+                  </button>
+                </span>
+              ))}
+            </>
+          )}
         </div>
 
         {error && <div className="error">{error}</div>}
 
         <div className="picker-list">
-          {loading && <div className="picker-empty">Loading…</div>}
+          {loading && (
+            <div className="picker-loading">
+              <div className="picker-spinner" />
+              Loading…
+            </div>
+          )}
           {!loading && result?.dirs.length === 0 && (
             <div className="picker-empty">No sub-folders here.</div>
           )}
           {!loading &&
             result?.dirs.map((d) => (
-              <div key={d.path} className="picker-row" onDoubleClick={() => go(d.path)}>
+              <div
+                key={d.path}
+                className={"picker-row" + (d.igMarkers.length > 0 ? " ig-folder" : "")}
+              >
+                <span className={"picker-icon" + (d.igMarkers.length > 0 ? " ig-icon" : "")}>
+                  {d.igMarkers.length > 0 ? "◆" : "▶"}
+                </span>
                 <button className="picker-name" onClick={() => go(d.path)}>
-                  📁 {d.name}
+                  {d.name}
                 </button>
                 {d.igMarkers.length > 0 && (
                   <span className="badge ig" title={d.igMarkers.join(", ")}>
@@ -90,11 +138,11 @@ export function FolderPicker({
               <>
                 {looksLikeIg ? (
                   <span className="good">
-                    Looks like an IG
+                    ✓ Looks like an IG
                     {result.igMarkers.length > 0 ? ` (${result.igMarkers.join(", ")})` : ""}
                   </span>
                 ) : (
-                  <span className="muted">No IG markers in this folder</span>
+                  <span className="muted">No IG markers detected</span>
                 )}
                 <span className="counts">
                   {" · "}

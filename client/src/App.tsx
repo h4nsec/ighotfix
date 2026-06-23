@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   Artifact,
   ArtifactCategory,
@@ -157,9 +157,11 @@ export function App() {
   return (
     <div className="app">
       <div className="topbar">
-        <h1>
-          <span className="brand">IG</span> Builder
-        </h1>
+        <div className="topbar-brand">
+          <h1>
+            <span className="brand">IG</span> Builder
+          </h1>
+        </div>
         <input
           value={root}
           onChange={(e) => setRoot(e.target.value)}
@@ -279,7 +281,8 @@ export function App() {
                   }
                 >
                   <span className="caret">{isCollapsed ? "▸" : "▾"}</span>
-                  {category} ({items.length})
+                  {category}
+                  <span className="group-count">{items.length}</span>
                 </div>
                 {!isCollapsed &&
                   items.map((a) => (
@@ -300,15 +303,44 @@ export function App() {
             );
           })}
           {artifacts.length === 0 && (
-            <div className="group-label">Load an IG to begin.</div>
+            <div className="sidebar-empty">Load an IG folder to get started.</div>
           )}
           {artifacts.length > 0 && shown === 0 && (
-            <div className="group-label">No artifacts match “{filter}”.</div>
+            <div className="sidebar-empty">No artifacts match &ldquo;{filter}&rdquo;.</div>
           )}
         </aside>
 
         <main className="main">
-          {!openArt && <div className="empty">Select an artifact from the sidebar.</div>}
+          {!openArt && (
+            <div className="empty">
+              <div className="empty-icon">⌸</div>
+              <div className="empty-title">
+                {artifacts.length === 0 ? "No IG loaded" : "Nothing selected"}
+              </div>
+              <div className="empty-sub">
+                {artifacts.length === 0
+                  ? "Enter a path and click Load IG, or use Browse to navigate to your IG folder."
+                  : "Select an artifact from the sidebar to view or edit it."}
+              </div>
+            </div>
+          )}
+
+          {/* Loading skeleton while a FHIR artifact is being fetched */}
+          {openArt && busy && !profile && !resource && !sourceMode && openArt.resourceType && (
+            <div className="loading-skeleton">
+              <div className="skeleton-head">
+                <div className="skeleton-bar wide" />
+                <div className="skeleton-bar narrow" />
+              </div>
+              <div className="skeleton-rows">
+                {[72, 55, 88, 60, 75].map((w, i) => (
+                  <div key={i} className="skeleton-row">
+                    <div className="skeleton-bar" style={{ width: `${w}%` }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Non-FHIR files, or "Edit source" on any FHIR resource. */}
           {openArt && (sourceMode || !openArt.resourceType) && (
@@ -378,6 +410,17 @@ function groupArtifacts(
   return CATEGORY_ORDER.filter((c) => map.has(c)).map((c) => [c, map.get(c)!]);
 }
 
+type ViewMode = "key" | "diff" | "snapshot";
+
+function filterForView(elements: ElementView[], mode: ViewMode): ElementView[] {
+  if (mode === "snapshot") return elements;
+  if (mode === "diff") return elements.filter((el) => !el.fromSnapshot);
+  // key: constrained elements + medically/technically significant base fields
+  return elements.filter(
+    (el) => !el.fromSnapshot || el.isSummary || el.isModifier || el.mustSupport,
+  );
+}
+
 function ProfileEditor({
   profile,
   pending,
@@ -389,14 +432,24 @@ function ProfileEditor({
 }) {
   const [addExt, setAddExt] = useState(false);
   const [addEl, setAddEl] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("key");
   // Element paths the user introduced this session that aren't in the
   // differential yet. They become real rows once an edit is saved.
   const [addedPaths, setAddedPaths] = useState<string[]>([]);
+
+  // Reset transient state whenever the user switches to a different profile.
+  useEffect(() => {
+    setAddedPaths([]);
+    setAddEl(false);
+    setAddExt(false);
+  }, [profile.artifactId]);
 
   const existingPaths = new Set(profile.elements.map((e) => e.id));
   const extraRows: ElementView[] = addedPaths
     .filter((p) => !existingPaths.has(p))
     .map((p) => ({ id: p, path: p, inDifferential: false }));
+
+  const hasSnapshot = profile.elements.some((e) => e.fromSnapshot);
 
   function addElement(rawPath: string) {
     let p = rawPath.trim();
@@ -416,6 +469,19 @@ function ProfileEditor({
           {profile.derivation ? ` · ${profile.derivation}` : ""}
         </div>
         <div className="head-actions">
+          {hasSnapshot && (
+            <div className="view-toggle">
+              {(["key", "diff", "snapshot"] as ViewMode[]).map((m) => (
+                <button
+                  key={m}
+                  className={viewMode === m ? "active" : ""}
+                  onClick={() => setViewMode(m)}
+                >
+                  {m === "key" ? "Key" : m === "diff" ? "Diff" : "Snapshot"}
+                </button>
+              ))}
+            </div>
+          )}
           <button onClick={() => setAddEl((v) => !v)}>+ Element</button>
           <button onClick={() => setAddExt((v) => !v)}>+ Extension</button>
         </div>
@@ -445,7 +511,7 @@ function ProfileEditor({
           </tr>
         </thead>
         <tbody>
-          {[...profile.elements, ...extraRows].map((el) => (
+          {[...filterForView(profile.elements, viewMode), ...extraRows].map((el) => (
             <ElementRow
               key={el.id}
               el={el}
@@ -663,7 +729,11 @@ function ElementRow({
             <>
               {el.path}
               {el.slicing && <span className="badge slicing">sliced</span>}
-              {!el.inDifferential && <span className="badge new">new</span>}
+              {el.fromSnapshot ? (
+                <span className="badge base">base</span>
+              ) : !el.inDifferential ? (
+                <span className="badge new">new</span>
+              ) : null}
             </>
           )}
           {el.types && el.types.length > 0 && !isExtension && (

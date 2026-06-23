@@ -360,6 +360,68 @@ export const fshAdapter: Adapter = {
       if (FLAG_RES.isModifier.test(rule.rest)) row.isModifier = true;
     }
 
+    const diffElements = order.map((k) => byKey.get(k)!);
+    let elements: ElementView[];
+
+    if (src.baseSnapshotJson?.length) {
+      // Merge base snapshot with differential elements (same logic as json/xml adapters).
+      const sdType = type;
+      const diffByFullId = new Map<string, ElementView>();
+      for (const ev of diffElements) diffByFullId.set(ev.id, ev);
+
+      const result: ElementView[] = [];
+      const coveredIds = new Set<string>();
+
+      for (const snapEl of src.baseSnapshotJson) {
+        const snapPath: string = snapEl.path ?? "";
+        const snapId: string = snapEl.id ?? snapPath;
+        const parts = snapPath.split(".");
+        if (parts.length > 2 || parts[0] !== sdType || (parts.length === 2 && snapId.includes(":"))) continue;
+
+        const diffRow = diffByFullId.get(snapId);
+        if (diffRow) {
+          result.push(diffRow);
+          coveredIds.add(snapId);
+        } else {
+          const extProfile = Array.isArray(snapEl.type)
+            ? snapEl.type.map((t: any) => t.profile?.[0]).find(Boolean)
+            : undefined;
+          result.push({
+            id: snapId,
+            path: snapPath,
+            min: typeof snapEl.min === "number" ? snapEl.min : undefined,
+            max: snapEl.max,
+            short: snapEl.short,
+            mustSupport: snapEl.mustSupport,
+            isSummary: snapEl.isSummary,
+            isModifier: snapEl.isModifier,
+            types: Array.isArray(snapEl.type)
+              ? snapEl.type.map((t: any) => t.code).filter(Boolean)
+              : undefined,
+            binding: snapEl.binding
+              ? { strength: snapEl.binding.strength, valueSet: snapEl.binding.valueSet }
+              : undefined,
+            sliceName: snapEl.sliceName,
+            slicing: snapEl.slicing
+              ? { discriminator: snapEl.slicing.discriminator, rules: snapEl.slicing.rules, ordered: snapEl.slicing.ordered }
+              : undefined,
+            extensionUrl: extProfile,
+            inDifferential: false,
+            fromSnapshot: true,
+          });
+        }
+      }
+
+      // Append differential elements not covered by depth-1 snapshot (slices, nested, etc.)
+      for (const ev of diffElements) {
+        if (!coveredIds.has(ev.id)) result.push(ev);
+      }
+
+      elements = result;
+    } else {
+      elements = diffElements;
+    }
+
     return {
       artifactId: artifact.id,
       name: profile.name,
@@ -368,7 +430,7 @@ export const fshAdapter: Adapter = {
       baseDefinition: profile.header.Parent,
       derivation: "constraint",
       url: undefined,
-      elements: order.map((k) => byKey.get(k)!),
+      elements,
     };
   },
 

@@ -148,7 +148,7 @@ export interface SlicingInfo {
   ordered?: boolean;
 }
 
-/** One row in the profile element table (from the differential). */
+/** One row in the profile element table. */
 export interface ElementView {
   /** ElementDefinition.id, e.g. "Observation.status". */
   id: string;
@@ -168,8 +168,10 @@ export interface ElementView {
   slicing?: SlicingInfo;
   /** For an extension element, the profile URL of the extension it references. */
   extensionUrl?: string;
-  /** True when the element only exists in the differential (a constraint). */
+  /** True when the element appears in the differential (i.e. is constrained). */
   inDifferential: boolean;
+  /** True when this element comes from the snapshot but has no differential constraint. */
+  fromSnapshot?: boolean;
 }
 
 export interface ProfileView {

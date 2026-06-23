@@ -19,6 +19,7 @@ import {
   adapterForExtension,
   applyChanges,
 } from "./adapters/index.js";
+import { resolveBaseSnapshot } from "./fhir-packages.js";
 
 const app = express();
 app.use(cors());
@@ -71,12 +72,40 @@ app.get("/api/profile", async (req, res) => {
   const artifactId = String(req.query.artifactId ?? "");
   if (!currentRoot) return res.status(409).json({ error: "Load an IG first." });
   try {
-    const src = await loadSource(currentRoot, idToRel(artifactId));
+    let src = await loadSource(currentRoot, idToRel(artifactId));
     if (!src) return res.status(404).json({ error: `Artifact not found: ${artifactId}` });
     const adapter = adapterForExtension(path.extname(src.filePath));
     const artifact = adapter?.describe(src);
     if (!adapter || !artifact)
       return res.status(404).json({ error: `${artifactId} isn't a recognised FHIR resource.` });
+
+    // For editable profiles that have no snapshot, look up the base type so the
+    // editor can show the full element landscape, not just the differential.
+    if (artifact.editable) {
+      const hasSnapshot =
+        src.language === "json"
+          ? src.text.includes('"snapshot"')
+          : src.language === "xml"
+            ? src.text.includes("<snapshot>")
+            : false; // FSH never has a snapshot
+      if (!hasSnapshot) {
+        let baseType: string | undefined;
+        if (src.language === "json") {
+          try { baseType = (JSON.parse(src.text) as any)?.type; } catch { /* ignore */ }
+        } else if (src.language === "xml") {
+          baseType = /<type\s+value="([^"]+)"/.exec(src.text)?.[1];
+        } else if (src.language === "fsh") {
+          // Extract `Parent: <value>` from FSH; strip URL prefix and quotes.
+          const raw = /^\s*Parent:\s*(\S+)/m.exec(src.text)?.[1];
+          baseType = raw?.replace(/^["']|["']$/g, "").split("/").pop();
+        }
+        if (baseType) {
+          const baseSnapshotJson = await resolveBaseSnapshot(baseType);
+          if (baseSnapshotJson) src = { ...src, baseSnapshotJson };
+        }
+      }
+    }
+
     const view: ProfileView | null = adapter.toProfileView(src, artifact);
     if (!view)
       return res.status(422).json({

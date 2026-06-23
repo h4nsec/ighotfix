@@ -113,7 +113,9 @@ export const jsonAdapter: Adapter = {
     if (sd.resourceType !== "StructureDefinition") return null;
 
     const diff: any[] = sd.differential?.element ?? [];
-    const elements: ElementView[] = diff.map((el): ElementView => {
+    const snapshot: any[] = sd.snapshot?.element ?? src.baseSnapshotJson ?? [];
+
+    function mapEl(el: any, inDifferential: boolean, fromSnapshot?: boolean): ElementView {
       const extProfile = Array.isArray(el.type)
         ? el.type.map((t: any) => t.profile?.[0]).find(Boolean)
         : undefined;
@@ -141,9 +143,52 @@ export const jsonAdapter: Adapter = {
             }
           : undefined,
         extensionUrl: extProfile,
-        inDifferential: true,
+        inDifferential,
+        ...(fromSnapshot ? { fromSnapshot: true } : {}),
       };
-    });
+    }
+
+    let elements: ElementView[];
+
+    if (snapshot.length > 0) {
+      const sdType: string = sd.type ?? "";
+      // Index diff elements by id for O(1) lookup
+      const diffById = new Map<string, any>();
+      for (const el of diff) diffById.set(el.id ?? el.path, el);
+
+      const coveredDiffIds = new Set<string>();
+      const result: ElementView[] = [];
+
+      // Walk snapshot in order; include only direct children (depth-1, no slices)
+      for (const snapEl of snapshot) {
+        const path: string = snapEl.path ?? "";
+        const id: string = snapEl.id ?? path;
+        const parts = path.split(".");
+        // Include root (<Type>) and direct children (<Type>.<field>); skip deeper paths
+        // and snapshot-generated slice copies (id contains ':').
+        if (parts.length > 2 || parts[0] !== sdType || (parts.length === 2 && id.includes(":"))) continue;
+
+        const diffEl = diffById.get(id);
+        if (diffEl) {
+          result.push(mapEl(diffEl, true));
+          coveredDiffIds.add(diffEl.id ?? diffEl.path);
+        } else {
+          result.push(mapEl(snapEl, false, true));
+        }
+      }
+
+      // Append any differential elements not covered by the depth-1 snapshot pass
+      // (slices, extensions with slice names, nested paths, etc.)
+      for (const diffEl of diff) {
+        if (!coveredDiffIds.has(diffEl.id ?? diffEl.path)) {
+          result.push(mapEl(diffEl, true));
+        }
+      }
+
+      elements = result;
+    } else {
+      elements = diff.map((el) => mapEl(el, true));
+    }
 
     return {
       artifactId: artifact.id,

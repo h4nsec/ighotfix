@@ -106,44 +106,132 @@ export const xmlAdapter: Adapter = {
   toProfileView(src: LoadedSource, artifact: Artifact): ProfileView | null {
     const root = findRoot(src.text);
     if (!root) return null;
-    const diff = findDifferential(root);
-    const elements: ElementView[] = [];
-    if (diff) {
-      for (const el of children(diff, "element")) {
-        const path = leafValue(child(el, "path")) ?? attrValue(el, "id") ?? "";
-        const sliceName = leafValue(child(el, "sliceName"));
-        const binding = child(el, "binding");
-        const typeEls = children(el, "type");
-        const extProfile = typeEls
-          .map((t) => leafValue(child(t, "profile")))
-          .find(Boolean);
-        elements.push({
-          id: attrValue(el, "id") ?? path,
-          path,
-          min: numberOrUndef(leafValue(child(el, "min"))),
-          max: leafValue(child(el, "max")),
-          short: leafValue(child(el, "short")),
-          mustSupport: leafValue(child(el, "mustSupport")) === "true",
-          isSummary: leafValue(child(el, "isSummary")) === "true",
-          isModifier: leafValue(child(el, "isModifier")) === "true",
-          types: typeEls.map((t) => leafValue(child(t, "code"))).filter(Boolean) as string[],
-          binding: binding
-            ? {
-                strength: leafValue(child(binding, "strength")) as any,
-                valueSet: leafValue(child(binding, "valueSet")),
-              }
-            : undefined,
-          sliceName,
-          extensionUrl: extProfile,
-          inDifferential: true,
-        });
-      }
+
+    const sdType = leafValue(child(root, "type")) ?? "";
+    const diff = child(root, "differential");
+    const snap = child(root, "snapshot");
+    const baseSnap: any[] = src.baseSnapshotJson ?? [];
+
+    function mapXmlEl(el: XmlElement, inDifferential: boolean, fromSnapshot?: boolean): ElementView {
+      const path = leafValue(child(el, "path")) ?? attrValue(el, "id") ?? "";
+      const sliceName = leafValue(child(el, "sliceName"));
+      const binding = child(el, "binding");
+      const typeEls = children(el, "type");
+      const extProfile = typeEls.map((t) => leafValue(child(t, "profile"))).find(Boolean);
+      return {
+        id: attrValue(el, "id") ?? path,
+        path,
+        min: numberOrUndef(leafValue(child(el, "min"))),
+        max: leafValue(child(el, "max")),
+        short: leafValue(child(el, "short")),
+        mustSupport: leafValue(child(el, "mustSupport")) === "true",
+        isSummary: leafValue(child(el, "isSummary")) === "true",
+        isModifier: leafValue(child(el, "isModifier")) === "true",
+        types: typeEls.map((t) => leafValue(child(t, "code"))).filter(Boolean) as string[],
+        binding: binding
+          ? {
+              strength: leafValue(child(binding, "strength")) as any,
+              valueSet: leafValue(child(binding, "valueSet")),
+            }
+          : undefined,
+        sliceName,
+        extensionUrl: extProfile,
+        inDifferential,
+        ...(fromSnapshot ? { fromSnapshot: true } : {}),
+      };
     }
+
+    /** Map a JSON-format snapshot element (from the package cache / fetch). */
+    function mapJsonEl(el: any, inDifferential: boolean, fromSnapshot?: boolean): ElementView {
+      const extProfile = Array.isArray(el.type)
+        ? el.type.map((t: any) => t.profile?.[0]).find(Boolean)
+        : undefined;
+      return {
+        id: el.id ?? el.path,
+        path: el.path,
+        min: typeof el.min === "number" ? el.min : undefined,
+        max: el.max,
+        short: el.short,
+        mustSupport: el.mustSupport,
+        isSummary: el.isSummary,
+        isModifier: el.isModifier,
+        types: Array.isArray(el.type) ? el.type.map((t: any) => t.code).filter(Boolean) : undefined,
+        binding: el.binding
+          ? { strength: el.binding.strength, valueSet: el.binding.valueSet }
+          : undefined,
+        sliceName: el.sliceName,
+        slicing: el.slicing
+          ? { discriminator: el.slicing.discriminator, rules: el.slicing.rules, ordered: el.slicing.ordered }
+          : undefined,
+        extensionUrl: extProfile,
+        inDifferential,
+        ...(fromSnapshot ? { fromSnapshot: true } : {}),
+      };
+    }
+
+    function isDisplayable(path: string, id: string): boolean {
+      const parts = path.split(".");
+      // Include root (<Type>) and direct children (<Type>.<field>)
+      // Exclude deeper paths and snapshot-generated slice copies (id has ':')
+      return parts.length <= 2 && parts[0] === sdType && !(parts.length === 2 && id.includes(":"));
+    }
+
+    const elements: ElementView[] = [];
+
+    if (snap || baseSnap.length > 0) {
+      const diffEls = diff ? children(diff, "element") : [];
+      // Build id → XML diff element map
+      const diffById = new Map<string, XmlElement>();
+      for (const el of diffEls) {
+        const id = attrValue(el, "id") ?? leafValue(child(el, "path")) ?? "";
+        diffById.set(id, el);
+      }
+      const coveredDiffIds = new Set<string>();
+
+      if (snap) {
+        // Use XML snapshot elements
+        for (const snapEl of children(snap, "element")) {
+          const path = leafValue(child(snapEl, "path")) ?? attrValue(snapEl, "id") ?? "";
+          const id = attrValue(snapEl, "id") ?? path;
+          if (!isDisplayable(path, id)) continue;
+          const diffEl = diffById.get(id);
+          if (diffEl) {
+            elements.push(mapXmlEl(diffEl, true));
+            coveredDiffIds.add(id);
+          } else {
+            elements.push(mapXmlEl(snapEl, false, true));
+          }
+        }
+      } else {
+        // Use JSON base snapshot (from package cache or fetched)
+        for (const snapEl of baseSnap) {
+          const path: string = snapEl.path ?? "";
+          const id: string = snapEl.id ?? path;
+          if (!isDisplayable(path, id)) continue;
+          const diffEl = diffById.get(id);
+          if (diffEl) {
+            elements.push(mapXmlEl(diffEl, true));
+            coveredDiffIds.add(id);
+          } else {
+            elements.push(mapJsonEl(snapEl, false, true));
+          }
+        }
+      }
+
+      // Append uncovered differential elements (slices, nested paths, etc.)
+      for (const diffEl of diffEls) {
+        const id = attrValue(diffEl, "id") ?? leafValue(child(diffEl, "path")) ?? "";
+        if (!coveredDiffIds.has(id)) elements.push(mapXmlEl(diffEl, true));
+      }
+    } else if (diff) {
+      for (const el of children(diff, "element")) elements.push(mapXmlEl(el, true));
+    }
+
     return {
       artifactId: artifact.id,
       name: leafValue(child(root, "name")) ?? artifact.name,
       title: leafValue(child(root, "title")),
-      type: leafValue(child(root, "type")) ?? "",
+      type: sdType,
       baseDefinition: leafValue(child(root, "baseDefinition")),
       derivation: leafValue(child(root, "derivation")) as any,
       url: leafValue(child(root, "url")),
