@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ImplementationGuide xmlns="http://hl7.org/fhir">
+  <id value="my.ig"/>
+  <url value="http://example.org/ImplementationGuide/my.ig"/>
+  <version value="0.2.0"/>
+  <name value="MyIG"/>
+  <title value="My Implementation Guide"/>
+  <status value="active"/>
+  <packageId value="my.ig"/>
+  <fhirVersion value="4.0.1"/>
+  <dependsOn>
+    <uri value="http://hl7.org.au/fhir/ImplementationGuide/hl7.fhir.au.base"/>
+    <packageId value="hl7.fhir.au.base"/>
+    <version value="5.2.0"/>
+  </dependsOn>
+  <definition>
+    <resource>
+      <reference>
+        <reference value="StructureDefinition/my-patient"/>
+      </reference>
+      <name value="My Patient Profile"/>
+      <exampleBoolean value="false"/>
+    </resource>
+    <parameter>
+      <code value="copyrightyear"/>
+      <value value="2026+"/>
+    </parameter>
+    <page>
+      <nameUrl value="toc.html"/>
+      <title value="Table of Contents"/>
+      <generation value="html"/>
+      <page>
+        <nameUrl value="index.html"/>
+        <title value="Home"/>
+        <generation value="markdown"/>
+      </page>
+    </page>
+  </definition>
+</ImplementationGuide>

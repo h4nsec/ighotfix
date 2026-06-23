@@ -155,6 +155,39 @@ describe("deep-path nested edits (CapabilityStatement shape)", () => {
     expect(out).toContain('<profile value="http://x/p"/>');
   });
 
+  it("xml: edits a doubly-nested path (IG resource.reference.reference)", () => {
+    const IG = `<?xml version="1.0"?>
+<ImplementationGuide xmlns="http://hl7.org/fhir">
+  <status value="draft"/>
+  <definition>
+    <resource>
+      <reference>
+        <reference value="StructureDefinition/old"/>
+      </reference>
+      <name value="Old"/>
+    </resource>
+  </definition>
+</ImplementationGuide>
+`;
+    const setRef = applyChanges(
+      IG,
+      xmlAdapter.computeChanges(src("xml", IG), [
+        setV("definition.resource[0].reference.reference", "StructureDefinition/new"),
+      ]),
+    );
+    expect(setRef).toContain('<reference value="StructureDefinition/new"/>');
+    // add a whole new resource entry as a nested object
+    const added = applyChanges(
+      IG,
+      xmlAdapter.computeChanges(src("xml", IG), [
+        addV("definition.resource", { reference: { reference: "ValueSet/x" }, name: "X", exampleBoolean: false }),
+      ]),
+    );
+    expect((added.match(/<resource>/g) ?? []).length).toBe(2);
+    expect(added).toContain('<reference value="ValueSet/x"/>');
+    expect(added).toContain('<exampleBoolean value="false"/>');
+  });
+
   it("xml: adds an extension with url as an attribute (not a child)", () => {
     const out = applyChanges(
       XML_CS,

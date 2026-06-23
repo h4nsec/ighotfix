@@ -130,7 +130,11 @@ function sectionsFor(rt: string, obj: any): ResourceSection[] {
 }
 
 /** Resource types with a dedicated structured editor. */
-const EDITABLE_TYPES = new Set(["SearchParameter", "CapabilityStatement"]);
+const EDITABLE_TYPES = new Set([
+  "SearchParameter",
+  "CapabilityStatement",
+  "ImplementationGuide",
+]);
 
 export function buildResourceView(src: LoadedSource, artifact: Artifact): ResourceView {
   const obj = toObject(src) ?? {};
