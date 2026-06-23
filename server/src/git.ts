@@ -342,10 +342,23 @@ export function clone(
       if (signal.aborted) onAbort();
       else signal.addEventListener("abort", onAbort, { once: true });
     }
-    const timer = setTimeout(() => killTree(child), 600_000);
-    timer.unref?.();
+
+    // Activity-aware idle timeout: kill only if git goes silent for 90 s.
+    // Resets on every chunk of output so large active clones are never killed.
+    const HANG_MS = 90_000;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    const resetIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => killTree(child), HANG_MS);
+    };
+    const clearIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = null;
+    };
+    resetIdle(); // start the clock; first output will reset it
 
     child.stderr.on("data", (chunk: Buffer) => {
+      resetIdle(); // still alive — push the deadline back
       const s = chunk.toString();
       buf += s;
       // git emits progress on stderr, updating a line with \r.
@@ -357,12 +370,12 @@ export function clone(
       }
     });
     child.on("error", (err) => {
-      clearTimeout(timer);
+      clearIdle();
       signal?.removeEventListener("abort", onAbort);
       resolve({ ok: false, output: err.message });
     });
     child.on("close", (code) => {
-      clearTimeout(timer);
+      clearIdle();
       signal?.removeEventListener("abort", onAbort);
       const output = buf.trim();
       if (cancelled) {
