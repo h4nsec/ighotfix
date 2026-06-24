@@ -143,9 +143,15 @@ export async function detectSetup(root: string): Promise<PublisherSetup> {
     }
   }
 
-  // Find jekyll: check PATH, then ask `gem environment` for the actual executable directory,
-  // then fall back to WindowsApps (common gem --bindir override on Windows).
+  // Find jekyll: try PATH, then ruby -S (searches gem load path without needing a bat file),
+  // then scan gem executable dir and known Windows locations.
   let jekyllRaw = await probeTool("jekyll", ["--version"]);
+
+  if (!jekyllRaw && rubyRaw) {
+    // ruby -S searches $LOAD_PATH and gem bin dirs for the script — most reliable fallback.
+    jekyllRaw = await probeTool(rubyExe, ["-S", "jekyll", "--version"]);
+  }
+
   if (!jekyllRaw) {
     const gemExe = rubyExe === "ruby" ? undefined :
       path.join(path.dirname(rubyExe), process.platform === "win32" ? "gem.cmd" : "gem");
@@ -153,13 +159,15 @@ export async function detectSetup(root: string): Promise<PublisherSetup> {
 
     if (gemExe && existsSync(gemExe)) {
       try {
-        const r = await execFileP(gemExe, ["environment"], { timeout: 12_000 });
+        // gem.cmd/.bat also needs shell:true on Windows.
+        const shell = process.platform === "win32" && /\.(bat|cmd)$/i.test(gemExe);
+        const r = await execFileP(gemExe, ["environment"], { timeout: 12_000, shell });
         const out = (r.stdout || r.stderr || "").toString();
         const m = /EXECUTABLE DIRECTORY:\s*(.+)/i.exec(out);
         if (m) gemDirs.push(m[1].trim());
       } catch { /* gem failed */ }
     }
-    // Also check WindowsApps — a common bindir override for user-installed gems.
+    // WindowsApps is a common gem --bindir override on Windows.
     if (process.platform === "win32") {
       gemDirs.push(path.join(os.homedir(), "AppData", "Local", "Microsoft", "WindowsApps"));
     }
