@@ -123,10 +123,31 @@ export async function detectSetup(root: string): Promise<PublisherSetup> {
   const javaMajor = best?.major;
   const javaCompatible = javaMajor !== undefined && javaMajor >= 17;
 
-  // Probe Ruby and Jekyll in parallel.
-  const [rubyRaw, jekyllRaw] = await Promise.all([
-    probeTool("ruby", ["-v"]),
-    probeTool("jekyll", ["--version"]),
+  // Probe Ruby — try PATH first, then well-known RubyInstaller locations on Windows.
+  let rubyExe = "ruby";
+  let rubyRaw = await probeTool("ruby", ["-v"]);
+  if (!rubyRaw && process.platform === "win32") {
+    const rubyCandidates: string[] = [];
+    try {
+      for (const entry of readdirSync("C:\\", { withFileTypes: false })) {
+        const s = String(entry);
+        if (/^ruby/i.test(s)) rubyCandidates.push(`C:\\${s}\\bin\\ruby.exe`);
+      }
+    } catch { /* C:\ not readable */ }
+    for (const candidate of rubyCandidates) {
+      if (!existsSync(candidate)) continue;
+      const v = await probeTool(candidate, ["-v"]);
+      if (v) { rubyRaw = v; rubyExe = candidate; break; }
+    }
+  }
+
+  // Jekyll lives in the same bin dir as ruby.
+  const jekyllExe = rubyExe === "ruby" ? "jekyll" :
+    path.join(path.dirname(rubyExe), process.platform === "win32" ? "jekyll.bat" : "jekyll");
+  const [jekyllRaw] = await Promise.all([
+    existsSync(jekyllExe) || jekyllExe === "jekyll"
+      ? probeTool(jekyllExe, ["--version"])
+      : Promise.resolve(undefined),
   ]);
   const rubyOk = !!rubyRaw;
   const jekyllOk = !!jekyllRaw;
