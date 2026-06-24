@@ -213,7 +213,9 @@ export async function detectSetup(root: string): Promise<PublisherSetup> {
 // ── Output parsing ────────────────────────────────────────────
 
 const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
-const SUMMARY_RE = /(\d+) errors?,\s*(\d+) warnings?/i;
+// Matches both "2 errors, 402 warnings" and "Errors: 2, Warnings: 402, ..."
+const SUMMARY_RE =
+  /(?:(\d+) errors?,\s*(\d+) warnings?|Errors:\s*(\d+),\s*Warnings:\s*(\d+))/i;
 // Match log-level markers as whole words, or leading "Error"/"Warning" at line start
 const ERROR_RE = /\[ERROR\]|\bERROR:\s|^Error\s+@|^Error:/m;
 const WARN_RE = /\[WARN\]|\bWARN(ING)?:\s|^Warning\s+@|^Warning:/im;
@@ -223,8 +225,9 @@ function parseLine(line: string) {
   if (summaryMatch) {
     return {
       isSummary: true,
-      errors: Number(summaryMatch[1]),
-      warnings: Number(summaryMatch[2]),
+      // Group 1+2 = "N errors, N warnings"; group 3+4 = "Errors: N, Warnings: N"
+      errors: Number(summaryMatch[1] ?? summaryMatch[3]),
+      warnings: Number(summaryMatch[2] ?? summaryMatch[4]),
       isError: false,
       isWarning: false,
     };
@@ -383,7 +386,8 @@ export function startBuild(
       } else {
         onEvent({ type: "summary", errors, warnings, durationMs });
       }
-      const success = !cancelled && code === 0 && errors === 0;
+      // success = process built output (exit 0); QA errors/warnings are content issues, not failures.
+      const success = !cancelled && code === 0;
       onEvent({
         type: "output",
         line: cancelled
