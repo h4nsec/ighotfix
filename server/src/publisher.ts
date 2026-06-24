@@ -141,14 +141,38 @@ export async function detectSetup(root: string): Promise<PublisherSetup> {
     }
   }
 
-  // Jekyll lives in the same bin dir as ruby.
-  const jekyllExe = rubyExe === "ruby" ? "jekyll" :
-    path.join(path.dirname(rubyExe), process.platform === "win32" ? "jekyll.bat" : "jekyll");
-  const [jekyllRaw] = await Promise.all([
-    existsSync(jekyllExe) || jekyllExe === "jekyll"
-      ? probeTool(jekyllExe, ["--version"])
-      : Promise.resolve(undefined),
-  ]);
+  // Find jekyll: check PATH, then ask `gem environment` for the actual executable directory,
+  // then fall back to WindowsApps (common gem --bindir override on Windows).
+  let jekyllRaw = await probeTool("jekyll", ["--version"]);
+  if (!jekyllRaw) {
+    const gemExe = rubyExe === "ruby" ? undefined :
+      path.join(path.dirname(rubyExe), process.platform === "win32" ? "gem.cmd" : "gem");
+    const gemDirs: string[] = [];
+
+    if (gemExe && existsSync(gemExe)) {
+      try {
+        const r = await execFileP(gemExe, ["environment"], { timeout: 12_000 });
+        const out = (r.stdout || r.stderr || "").toString();
+        const m = /EXECUTABLE DIRECTORY:\s*(.+)/i.exec(out);
+        if (m) gemDirs.push(m[1].trim());
+      } catch { /* gem failed */ }
+    }
+    // Also check WindowsApps — a common bindir override for user-installed gems.
+    if (process.platform === "win32") {
+      gemDirs.push(path.join(os.homedir(), "AppData", "Local", "Microsoft", "WindowsApps"));
+    }
+
+    for (const dir of gemDirs) {
+      for (const name of ["jekyll.bat", "jekyll"]) {
+        const candidate = path.join(dir, name);
+        if (existsSync(candidate)) {
+          const v = await probeTool(candidate, ["--version"]);
+          if (v) { jekyllRaw = v; break; }
+        }
+      }
+      if (jekyllRaw) break;
+    }
+  }
   const rubyOk = !!rubyRaw;
   const jekyllOk = !!jekyllRaw;
   // Trim verbose ruby output: "ruby 3.3.0 (2024-01-18 revision ...) [x64-...]" → "ruby 3.3.0"
