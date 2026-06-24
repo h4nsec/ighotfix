@@ -1227,6 +1227,44 @@ td.slice-row { padding-left: 22px; }
 }
 .form-row td { background: var(--panel); }
 
+/* ── Terminology editor ───────────────────────────────────────── */
+.include-block {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  margin: 0 12px 8px;
+  overflow: hidden;
+}
+.include-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--border);
+}
+.include-head .system-input {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 12px;
+  min-width: 0;
+}
+.include-head .version-input {
+  width: 100px;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.include-add-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 12px;
+}
+.include-add-row input { flex: 1; min-width: 0; }
+.include-block .res-section { border: none; border-top: 1px solid var(--border); margin: 0; }
+.include-block .group-label { padding: 6px 10px; font-size: 11px; }
+table.sp-table tr.add-row td { background: var(--panel-2); padding: 4px 8px; }
+table.sp-table tr.add-row input { background: transparent; border-color: var(--border); }
+
 /* ── Pending additions ────────────────────────────────────────── */
 .pending-adds { margin-top: 16px; }
 .pending-add {

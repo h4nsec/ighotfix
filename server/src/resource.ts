@@ -134,6 +134,8 @@ const EDITABLE_TYPES = new Set([
   "SearchParameter",
   "CapabilityStatement",
   "ImplementationGuide",
+  "ValueSet",
+  "CodeSystem",
 ]);
 
 export function buildResourceView(src: LoadedSource, artifact: Artifact): ResourceView {

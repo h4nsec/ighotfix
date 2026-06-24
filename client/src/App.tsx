@@ -16,6 +16,7 @@ import { TextEditor } from "./TextEditor.js";
 import { SearchParameterEditor } from "./SearchParameterEditor.js";
 import { CapabilityStatementEditor } from "./CapabilityStatementEditor.js";
 import { ImplementationGuideEditor } from "./ImplementationGuideEditor.js";
+import { TerminologyEditor } from "./TerminologyEditor.js";
 import { NewArtifactDialog } from "./NewArtifactDialog.js";
 import { GitPanel } from "./GitPanel.js";
 import { CloneDialog } from "./CloneDialog.js";
@@ -394,6 +395,8 @@ export function App() {
               <CapabilityStatementEditor view={resource} pending={pending} onEdit={queueEdit} />
             ) : resource.editableType && resource.resourceType === "ImplementationGuide" ? (
               <ImplementationGuideEditor view={resource} pending={pending} onEdit={queueEdit} />
+            ) : resource.editableType && (resource.resourceType === "ValueSet" || resource.resourceType === "CodeSystem") ? (
+              <TerminologyEditor view={resource} pending={pending} onEdit={queueEdit} />
             ) : (
               <ResourceViewer view={resource} onEditSource={() => setSourceMode(true)} />
             )

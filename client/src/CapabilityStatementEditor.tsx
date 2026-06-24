@@ -212,6 +212,20 @@ function ResourceCard({
         ))}
       </div>
 
+      {(interactions.some((_, k) => !pendingRemovedIdx.has(k)) || pendingAddCodes.length > 0) && (
+        <InteractionConformanceTable
+          base={base}
+          resType={res.type}
+          interactions={interactions}
+          pendingRemovedIdx={pendingRemovedIdx}
+          pendingAddCodes={pendingAddCodes}
+          pending={pending}
+          artifactId={artifactId}
+          onEdit={onEdit}
+          valueOf={valueOf}
+        />
+      )}
+
       <SearchParamEditor
         base={base}
         resType={res.type}
@@ -221,6 +235,105 @@ function ResourceCard({
         onEdit={onEdit}
       />
     </div>
+  );
+}
+
+function InteractionConformanceTable({
+  base,
+  resType,
+  interactions,
+  pendingRemovedIdx,
+  pendingAddCodes,
+  pending,
+  artifactId,
+  onEdit,
+  valueOf,
+}: {
+  base: string;
+  resType: string;
+  interactions: any[];
+  pendingRemovedIdx: Set<number>;
+  pendingAddCodes: string[];
+  pending: Edit[];
+  artifactId: string;
+  onEdit: (e: Edit) => void;
+  valueOf: (path: string, base: unknown) => string;
+}) {
+  const effectiveConformance = (intPath: string, it: any): string => {
+    const ei = expectationIndex(it);
+    for (const e of [...pending].reverse()) {
+      if (e.kind === "addValue" && e.path === `${intPath}.extension`) {
+        const v = (e as any).value;
+        if (v?.url === EXPECTATION_URL) return v.valueCode ?? "";
+      }
+      if (ei >= 0) {
+        if (e.kind === "setValue" && e.path === `${intPath}.extension[${ei}].valueCode`) {
+          return e.value === null ? "" : String(e.value);
+        }
+        if (e.kind === "removeValue" && e.path === `${intPath}.extension[${ei}]`) return "";
+      }
+    }
+    return expectationValue(it);
+  };
+
+  const setConformance = (it: any, k: number, level: string) => {
+    const ei = expectationIndex(it);
+    const intPath = `${base}.interaction[${k}]`;
+    if (!level) {
+      if (ei >= 0)
+        onEdit({ kind: "removeValue", artifactId, path: `${intPath}.extension[${ei}]`, description: `${it.code} conformance cleared` });
+      return;
+    }
+    if (ei >= 0) {
+      onEdit({ kind: "setValue", artifactId, path: `${intPath}.extension[${ei}].valueCode`, value: level, description: `${resType} ${it.code} → ${level}` });
+    } else {
+      onEdit({ kind: "addValue", artifactId, path: `${intPath}.extension`, value: { url: EXPECTATION_URL, valueCode: level }, description: `${resType} ${it.code} → ${level}` });
+    }
+  };
+
+  return (
+    <table className="sp-table">
+      <thead>
+        <tr>
+          <th>Interaction</th>
+          <th>Conformance</th>
+          <th>Documentation</th>
+        </tr>
+      </thead>
+      <tbody>
+        {interactions.map((it, k) =>
+          pendingRemovedIdx.has(k) ? null : (
+            <tr key={k}>
+              <td className="path">{it.code}</td>
+              <td>
+                <select
+                  value={effectiveConformance(`${base}.interaction[${k}]`, it)}
+                  onChange={(e) => setConformance(it, k, e.target.value)}
+                >
+                  <option value="">—</option>
+                  {CONFORMANCE.map((c) => <option key={c}>{c}</option>)}
+                </select>
+              </td>
+              <td>
+                <input
+                  value={valueOf(`${base}.interaction[${k}].documentation`, it.documentation)}
+                  placeholder="documentation…"
+                  onChange={(e) =>
+                    onEdit({ kind: "setValue", artifactId, path: `${base}.interaction[${k}].documentation`, value: e.target.value, description: `${it.code} documentation` })
+                  }
+                />
+              </td>
+            </tr>
+          ),
+        )}
+        {pendingAddCodes.filter(Boolean).map((code, i) => (
+          <tr key={"new" + i} className="dirty">
+            <td className="path">{code}</td>
+            <td colSpan={2} className="muted-cell">added — save to edit</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
