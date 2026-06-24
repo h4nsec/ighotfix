@@ -1,16 +1,19 @@
 import { useEffect, useState } from "react";
 import type { Artifact } from "@igb/shared";
 import { getFile, saveFile } from "./api.js";
+import { LayoutList } from "lucide-react";
 
 /** Raw source editor for any file — config, pages, or FHIR source. */
 export function TextEditor({
   artifact,
   onSaved,
   onError,
+  onBackToStructured,
 }: {
   artifact: Artifact;
   onSaved: () => void;
   onError: (msg: string) => void;
+  onBackToStructured?: () => void;
 }) {
   const [text, setText] = useState<string | null>(null);
   const [original, setOriginal] = useState("");
@@ -55,6 +58,13 @@ export function TextEditor({
         <div className="sub">
           {artifact.id} · {artifact.format}
         </div>
+        {onBackToStructured && (
+          <div className="head-actions">
+            <button onClick={onBackToStructured}>
+              <LayoutList size={13} /> Structured editor
+            </button>
+          </div>
+        )}
       </div>
 
       {text === null ? (

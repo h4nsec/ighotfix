@@ -19,8 +19,20 @@ import { ImplementationGuideEditor } from "./ImplementationGuideEditor.js";
 import { NewArtifactDialog } from "./NewArtifactDialog.js";
 import { GitPanel } from "./GitPanel.js";
 import { CloneDialog } from "./CloneDialog.js";
+import {
+  AlertTriangle,
+  BookOpen,
+  ChevronDown,
+  ChevronRight,
+  CornerDownRight,
+  FileCode2,
+  GitBranch,
+  Info,
+  Plus,
+  X,
+} from "lucide-react";
 
-const DEFAULT_ROOT = "C:/Users/User/Documents/IG Builder/fixtures/sample-ig";
+const DEFAULT_ROOT = localStorage.getItem("igb-root") ?? "";
 
 /** A clean message from any thrown value (drops a leading "Error:"). */
 function errMsg(e: unknown): string {
@@ -81,6 +93,7 @@ export function App() {
       setProfile(null);
       setResource(null);
       setPending([]);
+      localStorage.setItem("igb-root", target);
       if (summary.warning) setNotice(summary.warning);
       refreshGit();
     } catch (e) {
@@ -179,19 +192,19 @@ export function App() {
         </button>
         {artifacts.length > 0 && (
           <button onClick={() => setCreating(true)} disabled={busy} title="Create a new artifact">
-            + New
+            <Plus size={13} /> New
           </button>
         )}
         {artifacts.length > 0 && (
           <button className="git-chip" onClick={() => setGitOpen(true)} title="Git">
             {git?.isRepo ? (
               <>
-                <span className="git-icon">⎇</span> {git.branch}
+                <GitBranch size={13} className="git-icon" /> {git.branch}
                 {!git.clean && <span className="git-dot" title="uncommitted changes" />}
               </>
             ) : (
               <>
-                <span className="git-icon">⎇</span> git
+                <GitBranch size={13} className="git-icon" /> git
               </>
             )}
           </button>
@@ -240,19 +253,19 @@ export function App() {
 
       {error && (
         <div className="banner error-banner" role="alert">
-          <span className="banner-icon">⚠</span>
+          <AlertTriangle size={15} className="banner-icon" />
           <span className="banner-msg">{error}</span>
-          <button className="banner-x" onClick={() => setError(null)} title="Dismiss">
-            ✕
+          <button className="banner-x" onClick={() => setError(null)} title="Dismiss" aria-label="Dismiss">
+            <X size={14} />
           </button>
         </div>
       )}
       {notice && (
         <div className="banner notice-banner">
-          <span className="banner-icon">ℹ</span>
+          <Info size={15} className="banner-icon" />
           <span className="banner-msg">{notice}</span>
-          <button className="banner-x" onClick={() => setNotice(null)} title="Dismiss">
-            ✕
+          <button className="banner-x" onClick={() => setNotice(null)} title="Dismiss" aria-label="Dismiss">
+            <X size={14} />
           </button>
         </div>
       )}
@@ -267,7 +280,16 @@ export function App() {
                 placeholder={`Filter ${total} artifacts…`}
                 spellCheck={false}
               />
-              {filter && <span className="filter-count">{shown}</span>}
+              {filter && (
+                <button
+                  className="filter-clear"
+                  aria-label="Clear filter"
+                  onClick={() => setFilter("")}
+                  title="Clear filter"
+                >
+                  <X size={11} />
+                </button>
+              )}
             </div>
           )}
           {grouped.map(([category, items]) => {
@@ -280,7 +302,9 @@ export function App() {
                     setCollapsed((c) => ({ ...c, [category]: !c[category] }))
                   }
                 >
-                  <span className="caret">{isCollapsed ? "▸" : "▾"}</span>
+                  <span className="caret">
+                    {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                  </span>
                   {category}
                   <span className="group-count">{items.length}</span>
                 </div>
@@ -313,7 +337,7 @@ export function App() {
         <main className="main">
           {!openArt && (
             <div className="empty">
-              <div className="empty-icon">⌸</div>
+              <div className="empty-icon"><BookOpen size={40} strokeWidth={1.25} /></div>
               <div className="empty-title">
                 {artifacts.length === 0 ? "No IG loaded" : "Nothing selected"}
               </div>
@@ -351,11 +375,17 @@ export function App() {
                 setNotice(`Saved ${openArt.name}.`);
               }}
               onError={(m) => setError(m)}
+              onBackToStructured={sourceMode && openArt.resourceType ? () => setSourceMode(false) : undefined}
             />
           )}
 
           {!sourceMode && profile && (
-            <ProfileEditor profile={profile} pending={pending} onEdit={queueEdit} />
+            <ProfileEditor
+              profile={profile}
+              pending={pending}
+              onEdit={queueEdit}
+              onEditSource={() => setSourceMode(true)}
+            />
           )}
           {!sourceMode && resource && (
             resource.editableType && resource.resourceType === "SearchParameter" ? (
@@ -425,10 +455,12 @@ function ProfileEditor({
   profile,
   pending,
   onEdit,
+  onEditSource,
 }: {
   profile: ProfileView;
   pending: Edit[];
   onEdit: (e: Edit) => void;
+  onEditSource: () => void;
 }) {
   const [addExt, setAddExt] = useState(false);
   const [addEl, setAddEl] = useState(false);
@@ -442,6 +474,7 @@ function ProfileEditor({
     setAddedPaths([]);
     setAddEl(false);
     setAddExt(false);
+    setViewMode("key");
   }, [profile.artifactId]);
 
   const existingPaths = new Set(profile.elements.map((e) => e.id));
@@ -482,8 +515,9 @@ function ProfileEditor({
               ))}
             </div>
           )}
-          <button onClick={() => setAddEl((v) => !v)}>+ Element</button>
-          <button onClick={() => setAddExt((v) => !v)}>+ Extension</button>
+          <button onClick={() => setAddEl((v) => !v)}><Plus size={13} /> Element</button>
+          <button onClick={() => setAddExt((v) => !v)}><Plus size={13} /> Extension</button>
+          <button onClick={onEditSource} title="Edit raw source file"><FileCode2 size={13} /> Edit source</button>
         </div>
         {addEl && (
           <AddElementForm type={profile.type} onAdd={addElement} onCancel={() => setAddEl(false)} />
@@ -720,7 +754,7 @@ function ElementRow({
         <td className={"path" + (isSlice ? " slice-row" : "")}>
           {isSlice ? (
             <>
-              <span className="slice-marker">└</span>
+              <CornerDownRight size={12} className="slice-marker" />
               <span className="badge slice">slice</span> {el.sliceName}
               {isExtension && <span className="badge ext">ext</span>}
               {el.extensionUrl && <span className="ext-url">{el.extensionUrl}</span>}
@@ -824,7 +858,7 @@ function ElementRow({
       <td className="row-actions">
         {canSlice && (
           <button title="Add slice" onClick={() => setAddingSlice((v) => !v)}>
-            + slice
+            <Plus size={12} /> slice
           </button>
         )}
       </td>

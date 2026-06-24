@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Edit, ResourceView } from "@igb/shared";
+import { X } from "lucide-react";
 
 const STATUSES = ["draft", "active", "retired", "unknown"];
 const SP_TYPES = [
@@ -173,7 +174,7 @@ export function ArrayEditor({
                   })
                 }
               >
-                ✕
+                <X size={11} />
               </button>
             </span>
           ),

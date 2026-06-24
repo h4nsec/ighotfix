@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getHome, gitClone, type CloneProgress } from "./api.js";
+import { FolderPicker } from "./FolderPicker.js";
+import { X } from "lucide-react";
 
 /** Clone a remote repository into a destination folder, then load it as an IG. */
 export function CloneDialog({
@@ -14,6 +16,7 @@ export function CloneDialog({
   const [busy, setBusy] = useState(false);
   const [output, setOutput] = useState<string | null>(null);
   const [progress, setProgress] = useState<CloneProgress | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -50,73 +53,102 @@ export function CloneDialog({
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => !busy && onClose()}>
-      <div className="modal small" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>
-            Clone from remote
-            {busy && <span className="working">cloning…</span>}
-          </h3>
-          <button onClick={onClose} disabled={busy} title={busy ? "Clone in progress" : "Close"}>
-            ✕
-          </button>
-        </div>
-
-        <div className="new-form">
-          <label>Repository URL</label>
-          <input
-            autoFocus
-            value={url}
-            placeholder="https://github.com/org/my-ig.git"
-            onChange={(e) => setUrl(e.target.value)}
-            spellCheck={false}
-          />
-
-          <label>Destination folder</label>
-          <input value={parent} onChange={(e) => setParent(e.target.value)} spellCheck={false} />
-
-          <div className="new-hint">
-            Clones into{" "}
-            <code>
-              {parent || "…"}
-              {parent ? "/" : ""}
-              {repoName || "repo"}
-            </code>
-            , then loads it. Public repos only for now — private repos that need a
-            credential prompt will fail rather than hang.
-          </div>
-        </div>
-
-        {busy && (
-          <div className="clone-progress">
-            <div className="clone-progress-label">
-              <span>{progress?.phase ?? "Connecting…"}</span>
-              {progress?.percent != null && <span>{progress.percent}%</span>}
-            </div>
-            <div className="progress-track">
-              <div
-                className={"progress-fill" + (progress?.percent == null ? " indeterminate" : "")}
-                style={progress?.percent != null ? { width: `${progress.percent}%` } : undefined}
-              />
-            </div>
-            {progress?.raw && <div className="clone-progress-raw">{progress.raw}</div>}
-          </div>
-        )}
-
-        {output && <pre className="git-output">{output}</pre>}
-
-        <div className="picker-foot">
-          <span className="picker-hint" />
-          <button onClick={busy ? cancelClone : onClose}>
-            {busy ? "Cancel clone" : "Cancel"}
-          </button>
-          {!busy && (
-            <button className="primary" onClick={clone} disabled={!url.trim() || !parent.trim()}>
-              Clone
+    <>
+      <div className="modal-backdrop" onClick={() => !busy && onClose()}>
+        <div className="modal small" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-head">
+            <h3>
+              Clone from remote
+              {busy && <span className="working">cloning…</span>}
+            </h3>
+            <button onClick={onClose} disabled={busy} title={busy ? "Clone in progress" : "Close"} aria-label="Close">
+              <X size={14} />
             </button>
+          </div>
+
+          <div className="new-form">
+            <label>Repository URL</label>
+            <input
+              autoFocus
+              value={url}
+              placeholder="https://github.com/org/my-ig.git"
+              onChange={(e) => setUrl(e.target.value)}
+              spellCheck={false}
+            />
+
+            <label>Destination folder</label>
+            <div className="input-with-browse">
+              <input
+                value={parent}
+                onChange={(e) => setParent(e.target.value)}
+                spellCheck={false}
+              />
+              <button
+                type="button"
+                className="browse-btn"
+                disabled={busy}
+                onClick={() => setShowPicker(true)}
+                title="Browse for folder"
+              >
+                Browse…
+              </button>
+            </div>
+
+            <div className="new-hint">
+              Clones into{" "}
+              <code>
+                {parent || "…"}
+                {parent ? "/" : ""}
+                {repoName || "repo"}
+              </code>
+              , then loads it. Public repos only for now — private repos that need a
+              credential prompt will fail rather than hang.
+            </div>
+          </div>
+
+          {busy && (
+            <div className="clone-progress">
+              <div className="clone-progress-label">
+                <span>{progress?.phase ?? "Connecting…"}</span>
+                {progress?.percent != null && <span>{progress.percent}%</span>}
+              </div>
+              <div className="progress-track">
+                <div
+                  className={"progress-fill" + (progress?.percent == null ? " indeterminate" : "")}
+                  style={progress?.percent != null ? { width: `${progress.percent}%` } : undefined}
+                />
+              </div>
+              {progress?.raw && <div className="clone-progress-raw">{progress.raw}</div>}
+            </div>
           )}
+
+          {output && <pre className="git-output">{output}</pre>}
+
+          <div className="picker-foot">
+            <span className="picker-hint" />
+            <button onClick={busy ? cancelClone : onClose}>
+              {busy ? "Cancel clone" : "Cancel"}
+            </button>
+            {!busy && (
+              <button className="primary" onClick={clone} disabled={!url.trim() || !parent.trim()}>
+                Clone
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      {showPicker && (
+        <FolderPicker
+          title="Choose destination folder"
+          initialPath={parent}
+          onPick={(path) => {
+            setParent(path);
+            setShowPicker(false);
+          }}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
+    </>
   );
 }

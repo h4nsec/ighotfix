@@ -78,7 +78,7 @@ body {
   margin-top: 80px;
   text-align: center;
 }
-.empty-icon { font-size: 32px; opacity: 0.25; line-height: 1; }
+.empty-icon { display: flex; justify-content: center; opacity: 0.25; margin-bottom: 4px; }
 .empty-title { font-size: 15px; font-weight: 600; color: var(--muted-2); }
 .empty-sub { font-size: 13px; color: var(--muted); max-width: 340px; line-height: 1.6; }
 
@@ -101,6 +101,9 @@ body {
 
 /* ── Buttons ──────────────────────────────────────────────────── */
 button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
@@ -220,15 +223,19 @@ input:focus, select:focus, textarea:focus {
   border-radius: var(--r-sm);
   font-size: 12px;
 }
-.filter-count {
+.filter-clear {
   position: absolute;
-  right: 18px;
+  right: 14px;
   top: 50%;
   transform: translateY(-50%);
+  background: transparent;
+  border: none;
   color: var(--muted);
-  font-size: 11px;
-  pointer-events: none;
+  padding: 2px;
+  cursor: pointer;
+  line-height: 0;
 }
+.filter-clear:hover { color: var(--text); background: transparent; border-color: transparent; }
 
 .group-label {
   padding: 12px 12px 4px;
@@ -243,7 +250,7 @@ input:focus, select:focus, textarea:focus {
 }
 .group-label.clickable { cursor: pointer; user-select: none; }
 .group-label.clickable:hover { color: var(--muted-2); }
-.group-label .caret { display: inline-block; width: 10px; font-size: 9px; opacity: 0.6; }
+.group-label .caret { display: inline-flex; align-items: center; width: 16px; opacity: 0.6; }
 .group-count {
   margin-left: auto;
   font-size: 11px;
@@ -523,10 +530,8 @@ td .flag { color: var(--accent); font-size: 11px; margin-left: 6px; }
 .modal-head > button {
   background: transparent;
   border: none;
-  font-size: 15px;
   color: var(--muted);
-  padding: 4px 7px;
-  line-height: 1;
+  padding: 5px 7px;
   border-radius: var(--r-xs);
 }
 .modal-head > button:hover:not(:disabled) {
@@ -572,10 +577,9 @@ td .flag { color: var(--accent); font-size: 11px; margin-left: 6px; }
 .picker-crumb.current:hover:not(:disabled) { background: transparent; color: var(--text); }
 .picker-sep {
   color: var(--muted);
-  font-size: 10px;
   user-select: none;
   opacity: 0.5;
-  padding: 0 1px;
+  flex-shrink: 0;
 }
 .picker-root-btn {
   background: transparent;
@@ -605,7 +609,7 @@ td .flag { color: var(--accent); font-size: 11px; margin-left: 6px; }
 .picker-row.ig-folder { border-left: 2px solid var(--good); }
 .picker-row:not(.ig-folder) { border-left: 2px solid transparent; }
 
-.picker-icon { flex-shrink: 0; color: var(--warn); font-size: 14px; opacity: 0.8; line-height: 1; }
+.picker-icon { flex-shrink: 0; display: inline-flex; align-items: center; color: var(--warn); opacity: 0.8; }
 .picker-icon.ig-icon { color: var(--good); }
 .picker-name {
   background: transparent;
@@ -653,7 +657,7 @@ td .flag { color: var(--accent); font-size: 11px; margin-left: 6px; }
   flex-shrink: 0;
 }
 .picker-hint { flex: 1; font-size: 12px; line-height: 1.5; }
-.picker-hint .good { color: var(--good); }
+.picker-hint .good { color: var(--good); display: inline-flex; align-items: center; gap: 3px; }
 .picker-hint .muted { color: var(--muted); }
 .picker-hint .counts { color: var(--muted); font-family: var(--mono); }
 
@@ -667,7 +671,7 @@ td .flag { color: var(--accent); font-size: 11px; margin-left: 6px; }
   padding: 5px 11px;
   border-radius: 20px;
 }
-.git-chip .git-icon { color: var(--accent); font-size: 13px; }
+.git-chip .git-icon { color: var(--accent); }
 .git-dot {
   width: 7px;
   height: 7px;
@@ -692,6 +696,9 @@ td .flag { color: var(--accent); font-size: 11px; margin-left: 6px; }
   border-radius: var(--r-xs);
 }
 .branch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   margin-left: 10px;
   font-family: var(--mono);
   font-size: 12px;
@@ -813,7 +820,7 @@ td .flag { color: var(--accent); font-size: 11px; margin-left: 6px; }
   color: var(--muted);
   flex-shrink: 0;
 }
-.git-body .muted.small { color: var(--muted); font-size: 12px; }
+.git-body .muted.small { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); font-size: 12px; }
 
 /* ── New artifact dialog ──────────────────────────────────────── */
 .modal.small { width: 480px; }
@@ -834,6 +841,19 @@ td .flag { color: var(--accent); font-size: 11px; margin-left: 6px; }
   border-radius: var(--r-sm);
   font-family: var(--mono);
   font-size: 13px;
+}
+.input-with-browse {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.input-with-browse input { flex: 1; min-width: 0; }
+.browse-btn {
+  flex-shrink: 0;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  white-space: nowrap;
 }
 .seg {
   display: flex;
@@ -947,7 +967,7 @@ td .flag { color: var(--accent); font-size: 11px; margin-left: 6px; }
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.banner .banner-icon { font-size: 14px; flex-shrink: 0; }
+.banner .banner-icon { flex-shrink: 0; }
 .banner .banner-msg { flex: 1; word-break: break-word; }
 .banner .banner-x {
   background: transparent;
@@ -1014,12 +1034,11 @@ table.kv.form textarea { width: 640px; resize: vertical; line-height: 1.6; }
   border: none;
   color: var(--muted);
   padding: 0 2px;
-  font-size: 12px;
   cursor: pointer;
 }
 .chip button:hover { color: var(--danger); background: transparent; border-color: transparent; }
 
-.chip-x { background: transparent; border: none; color: var(--muted); cursor: pointer; }
+.chip-x { background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 2px 4px; }
 .chip-x:hover { color: var(--danger); background: transparent; border-color: transparent; }
 
 /* ── Capability Statement resource cards ─────────────────────── */
@@ -1183,7 +1202,7 @@ table.kv td { font-family: var(--mono); font-size: 12px; word-break: break-all; 
 }
 
 /* ── Slice / path markers ─────────────────────────────────────── */
-.slice-marker { color: var(--muted); margin-right: 4px; }
+.slice-marker { color: var(--muted); margin-right: 4px; vertical-align: middle; }
 td.slice-row { padding-left: 22px; }
 .ext-url {
   color: var(--muted);

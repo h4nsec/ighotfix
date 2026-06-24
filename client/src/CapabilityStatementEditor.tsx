@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Edit, ResourceView } from "@igb/shared";
+import { X } from "lucide-react";
 
 const STATUSES = ["draft", "active", "retired", "unknown"];
 const INTERACTIONS = [
@@ -142,7 +143,6 @@ function ResourceCard({
   set: (path: string, value: string, label: string) => void;
 }) {
   const interactions = arr(res.interaction);
-  const currentCodes = new Set(interactions.map((i: any) => i.code));
   const searchParams = arr(res.searchParam);
 
   // Pending-aware interaction state.
@@ -331,7 +331,7 @@ function SearchParamEditor({
                       onEdit({ kind: "removeValue", artifactId, path: `${path}[${i}]`, description: `${resType} − search ${sp.name}` })
                     }
                   >
-                    ✕
+                    <X size={13} />
                   </button>
                 </td>
               </tr>

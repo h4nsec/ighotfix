@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Artifact } from "@igb/shared";
 import { createArtifact } from "./api.js";
+import { X } from "lucide-react";
 
 type NewType = "SearchParameter" | "CapabilityStatement";
 
@@ -87,7 +88,7 @@ export function NewArtifactDialog({
       <div className="modal small" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>New artifact</h3>
-          <button onClick={onClose}>✕</button>
+          <button onClick={onClose} aria-label="Close"><X size={14} /></button>
         </div>
 
         <div className="new-form">

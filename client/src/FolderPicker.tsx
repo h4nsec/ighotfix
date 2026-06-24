@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { browse, getHome, type BrowseResult } from "./api.js";
+import { BookMarked, Check, ChevronRight, Folder, Monitor, X } from "lucide-react";
 
 function parseBreadcrumbs(path: string): { label: string; path: string }[] {
   if (!path) return [];
@@ -24,10 +25,12 @@ function parseBreadcrumbs(path: string): { label: string; path: string }[] {
 
 export function FolderPicker({
   initialPath,
+  title = "Choose IG folder",
   onPick,
   onClose,
 }: {
   initialPath?: string;
+  title?: string;
   onPick: (path: string) => void;
   onClose: () => void;
 }) {
@@ -66,8 +69,8 @@ export function FolderPicker({
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>Choose IG folder</h3>
-          <button onClick={onClose}>✕</button>
+          <h3>{title}</h3>
+          <button onClick={onClose} aria-label="Close"><X size={14} /></button>
         </div>
 
         <div className="picker-breadcrumbs">
@@ -80,11 +83,11 @@ export function FolderPicker({
                 onClick={() => go("")}
                 title="Browse drives"
               >
-                ⊞
+                <Monitor size={13} />
               </button>
               {crumbs.map((crumb, i) => (
                 <span key={crumb.path} style={{ display: "contents" }}>
-                  <span className="picker-sep">›</span>
+                  <ChevronRight size={12} className="picker-sep" />
                   <button
                     className={"picker-crumb" + (i === crumbs.length - 1 ? " current" : "")}
                     onClick={() => i < crumbs.length - 1 && go(crumb.path)}
@@ -118,7 +121,7 @@ export function FolderPicker({
                 className={"picker-row" + (d.igMarkers.length > 0 ? " ig-folder" : "")}
               >
                 <span className={"picker-icon" + (d.igMarkers.length > 0 ? " ig-icon" : "")}>
-                  {d.igMarkers.length > 0 ? "◆" : "▶"}
+                  {d.igMarkers.length > 0 ? <BookMarked size={14} /> : <Folder size={14} />}
                 </span>
                 <button className="picker-name" onClick={() => go(d.path)}>
                   {d.name}
@@ -138,7 +141,7 @@ export function FolderPicker({
               <>
                 {looksLikeIg ? (
                   <span className="good">
-                    ✓ Looks like an IG
+                    <Check size={13} /> Looks like an IG
                     {result.igMarkers.length > 0 ? ` (${result.igMarkers.join(", ")})` : ""}
                   </span>
                 ) : (

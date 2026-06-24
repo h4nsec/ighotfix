@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Edit, ResourceView } from "@igb/shared";
+import { Plus, X } from "lucide-react";
 
 const STATUSES = ["draft", "active", "retired", "unknown"];
 const GENERATIONS = ["html", "markdown", "xml", "generated"];
@@ -221,7 +222,7 @@ function ListSection({
                       onEdit({ kind: "removeValue", artifactId: id, path: `${path}[${i}]`, description: `− ${rowKey(it)}` })
                     }
                   >
-                    ✕
+                    <X size={13} />
                   </button>
                 </td>
               </tr>
@@ -238,7 +239,7 @@ function ListSection({
       </table>
       <div className="sp-add">
         <button onClick={() => onEdit({ kind: "addValue", artifactId: id, path, value: newItem, description: `+ ${title}` })}>
-          + Add
+          <Plus size={13} /> Add
         </button>
       </div>
     </div>
@@ -344,7 +345,7 @@ function ResourceList({
                         })
                       }
                     >
-                      ✕
+                      <X size={13} />
                     </button>
                   </td>
                 </tr>
@@ -365,7 +366,7 @@ function ResourceList({
             })
           }
         >
-          + Add resource
+          <Plus size={13} /> Add resource
         </button>
       </div>
     </div>

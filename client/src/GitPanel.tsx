@@ -16,6 +16,7 @@ import {
   type GitStatus,
 } from "./api.js";
 import { DiffView } from "./DiffView.js";
+import { ArrowDown, ArrowUp, GitBranch, X } from "lucide-react";
 
 export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const [status, setStatus] = useState<GitStatus | null>(null);
@@ -72,12 +73,12 @@ export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChange
           <h3>
             Git
             {status?.isRepo && status.branch && (
-              <span className="branch-chip">⎇ {status.branch}</span>
+              <span className="branch-chip"><GitBranch size={12} /> {status.branch}</span>
             )}
             {busy && <span className="working">working…</span>}
           </h3>
-          <button onClick={onClose} disabled={busy} title={busy ? "Operation in progress" : "Close"}>
-            ✕
+          <button onClick={onClose} disabled={busy} title={busy ? "Operation in progress" : "Close"} aria-label="Close">
+            <X size={14} />
           </button>
         </div>
 
@@ -88,7 +89,7 @@ export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChange
             ) : (
               <>
                 <p className="muted">
-                  This folder isn’t a git repository yet.
+                  This folder isn't a git repository yet.
                 </p>
                 <button className="primary" disabled={busy} onClick={() => run(gitInit)}>
                   Initialize repository
@@ -137,8 +138,8 @@ export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChange
               </div>
               {(status.ahead || status.behind) && status.hasRemote ? (
                 <div className="muted small">
-                  {status.ahead ? `↑${status.ahead} ahead ` : ""}
-                  {status.behind ? `↓${status.behind} behind` : ""}
+                  {status.ahead ? <><ArrowUp size={11} />{status.ahead} ahead </> : null}
+                  {status.behind ? <><ArrowDown size={11} />{status.behind} behind</> : null}
                 </div>
               ) : null}
             </div>
