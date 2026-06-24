@@ -488,6 +488,30 @@ function SetupTab({
               )}
             </td>
           </tr>
+          <tr>
+            <th>Ruby</th>
+            <td>
+              {detecting ? (
+                <span className="muted">Detecting…</span>
+              ) : setup?.rubyOk ? (
+                <span className="good"><Check size={13} /> {setup.rubyVersion ?? "detected"}</span>
+              ) : (
+                <span className="bad"><AlertTriangle size={13} /> Not found</span>
+              )}
+            </td>
+          </tr>
+          <tr>
+            <th>Jekyll</th>
+            <td>
+              {detecting ? (
+                <span className="muted">Detecting…</span>
+              ) : setup?.jekyllOk ? (
+                <span className="good"><Check size={13} /> {setup.jekyllVersion ?? "detected"}</span>
+              ) : (
+                <span className="bad"><AlertTriangle size={13} /> Not found — required for HTML output</span>
+              )}
+            </td>
+          </tr>
         </tbody>
       </table>
 
@@ -498,10 +522,30 @@ function SetupTab({
             The standard way is to run your IG's <code>_updatePublisher</code> script — it
             downloads the jar to <code>input-cache/publisher.jar</code> automatically.
           </p>
-          <p>
-            Or download it manually from the latest release and place it anywhere:
-          </p>
+          <p>Or download it manually:</p>
           <CopyBlock value="https://github.com/HL7/fhir-ig-publisher/releases/latest/download/publisher.jar" />
+        </div>
+      )}
+
+      {setup && !setup.jekyllOk && !detecting && (
+        <div className="pub-callout pub-callout-error" style={{ marginTop: 12 }}>
+          <div className="pub-callout-title">Jekyll is required for HTML output</div>
+          <p>
+            IG Publisher uses Jekyll to render the final HTML site. Without it the build will
+            run for ~20 minutes and then fail at the very last step.
+          </p>
+          <p><strong>Step 1 — Install Ruby</strong> (skip if Ruby is already detected above)</p>
+          <p>
+            Download <strong>Ruby+Devkit</strong> from{" "}
+            <a href="https://rubyinstaller.org/downloads/" target="_blank" rel="noreferrer">
+              rubyinstaller.org
+            </a>{" "}
+            and run the installer. When asked, choose <em>"Add Ruby executables to your PATH"</em>{" "}
+            and let it run the MSYS2 setup at the end.
+          </p>
+          <p><strong>Step 2 — Install Jekyll</strong> (in a new terminal after Ruby is installed)</p>
+          <CopyBlock value="gem install jekyll bundler" />
+          <p><strong>Step 3</strong> — Restart the dev server, then click Re-detect.</p>
         </div>
       )}
 

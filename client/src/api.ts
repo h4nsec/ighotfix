@@ -227,6 +227,10 @@ export interface PublisherSetup {
   javaMajor?: number;
   javaCompatible?: boolean;
   javaExe?: string;
+  rubyOk: boolean;
+  rubyVersion?: string;
+  jekyllOk: boolean;
+  jekyllVersion?: string;
   jarPath?: string;
   searchedPaths: string[];
 }

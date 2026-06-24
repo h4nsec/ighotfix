@@ -13,6 +13,10 @@ export interface PublisherSetup {
   javaMajor?: number;
   javaCompatible?: boolean; // true when major >= 17
   javaExe?: string;         // explicit path to use (may differ from PATH java)
+  rubyOk: boolean;
+  rubyVersion?: string;
+  jekyllOk: boolean;
+  jekyllVersion?: string;
   jarPath?: string;
   searchedPaths: string[];
 }
@@ -35,6 +39,17 @@ export type BuildEvent =
   | { type: "stopped" };
 
 // ── Setup detection ───────────────────────────────────────────
+
+/** Run a command and return the first line of its output, or undefined on failure. */
+async function probeTool(cmd: string, args: string[]): Promise<string | undefined> {
+  try {
+    const r = await execFileP(cmd, args, { timeout: 8_000 });
+    const out = (r.stdout || r.stderr || "").toString().trim();
+    return out.split(/\r?\n/)[0].trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Try to get the Java major version for a given executable. Returns undefined on failure. */
 async function probeJava(exe: string): Promise<{ version: string; major: number } | undefined> {
@@ -108,6 +123,17 @@ export async function detectSetup(root: string): Promise<PublisherSetup> {
   const javaMajor = best?.major;
   const javaCompatible = javaMajor !== undefined && javaMajor >= 17;
 
+  // Probe Ruby and Jekyll in parallel.
+  const [rubyRaw, jekyllRaw] = await Promise.all([
+    probeTool("ruby", ["-v"]),
+    probeTool("jekyll", ["--version"]),
+  ]);
+  const rubyOk = !!rubyRaw;
+  const jekyllOk = !!jekyllRaw;
+  // Trim verbose ruby output: "ruby 3.3.0 (2024-01-18 revision ...) [x64-...]" → "ruby 3.3.0"
+  const rubyVersion = rubyRaw ? rubyRaw.replace(/\s*\(.*/, "").trim() : undefined;
+  const jekyllVersion = jekyllRaw;
+
   const home = os.homedir();
   const searchedPaths = [
     path.join(root, "input-cache", "publisher.jar"),
@@ -118,11 +144,16 @@ export async function detectSetup(root: string): Promise<PublisherSetup> {
   ];
 
   const jarPath = searchedPaths.find((p) => existsSync(p));
-  return { javaOk, javaVersion, javaMajor, javaCompatible, javaExe, jarPath, searchedPaths };
+  return {
+    javaOk, javaVersion, javaMajor, javaCompatible, javaExe,
+    rubyOk, rubyVersion, jekyllOk, jekyllVersion,
+    jarPath, searchedPaths,
+  };
 }
 
 // ── Output parsing ────────────────────────────────────────────
 
+const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
 const SUMMARY_RE = /(\d+) errors?,\s*(\d+) warnings?/i;
 // Match log-level markers as whole words, or leading "Error"/"Warning" at line start
 const ERROR_RE = /\[ERROR\]|\bERROR:\s|^Error\s+@|^Error:/m;
@@ -235,7 +266,7 @@ export function startBuild(
     }
 
     const handleLine = (line: string) => {
-      const t = line.trim();
+      const t = line.replace(ANSI_RE, "").trim();
       if (!t) return;
       const parsed = parseLine(t);
       if (parsed.isSummary) {
