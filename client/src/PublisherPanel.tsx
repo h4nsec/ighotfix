@@ -118,6 +118,9 @@ export function PublisherPanel({
         break;
       case "done":
         setBuilding(false);
+        if (!e.cancelled && !e.success) {
+          pushLine("Build failed — check output above for details.", "error");
+        }
         break;
       case "changed":
         pushLine(`↻  ${e.file} changed`, "changed");

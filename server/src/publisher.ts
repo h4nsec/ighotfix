@@ -139,9 +139,18 @@ export function startBuild(
       ...txArgs(opts.mode, opts.txUrl),
     ];
 
+    // Emit the exact command so the user can reproduce it in a terminal.
+    onEvent({
+      type: "output",
+      line: `Running: java ${args.join(" ")}`,
+      isError: false,
+      isWarning: false,
+    });
+
     const child = spawn("java", args, {
       cwd: opts.root,
       windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
     let cancelled = false;
@@ -214,10 +223,19 @@ export function startBuild(
       } else {
         onEvent({ type: "summary", errors, warnings, durationMs });
       }
+      const success = !cancelled && code === 0 && errors === 0;
+      onEvent({
+        type: "output",
+        line: cancelled
+          ? "Build cancelled."
+          : `Process exited with code ${code ?? "null"}. ${success ? "Build succeeded." : "Build failed."}`,
+        isError: !success && !cancelled,
+        isWarning: false,
+      });
       if (cancelled) {
         onEvent({ type: "done", success: false, cancelled: true });
       } else {
-        onEvent({ type: "done", success: code === 0 && errors === 0 });
+        onEvent({ type: "done", success });
       }
       resolve();
     });
