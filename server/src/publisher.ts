@@ -43,7 +43,9 @@ export type BuildEvent =
 /** Run a command and return the first line of its output, or undefined on failure. */
 async function probeTool(cmd: string, args: string[]): Promise<string | undefined> {
   try {
-    const r = await execFileP(cmd, args, { timeout: 8_000 });
+    // .bat and .cmd files require shell:true on Windows to execute.
+    const shell = process.platform === "win32" && /\.(bat|cmd)$/i.test(cmd);
+    const r = await execFileP(cmd, args, { timeout: 8_000, shell });
     const out = (r.stdout || r.stderr || "").toString().trim();
     return out.split(/\r?\n/)[0].trim() || undefined;
   } catch {
