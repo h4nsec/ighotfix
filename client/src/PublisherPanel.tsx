@@ -146,6 +146,7 @@ export function PublisherPanel({
     mode,
     txUrl: mode === "local-tx" ? txUrl : undefined,
     javaExe: setup?.javaExe,
+    rubyBinDir: setup?.rubyBinDir,
   };
 
   function canBuild() {

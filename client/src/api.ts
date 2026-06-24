@@ -229,6 +229,7 @@ export interface PublisherSetup {
   javaExe?: string;
   rubyOk: boolean;
   rubyVersion?: string;
+  rubyBinDir?: string;
   jekyllOk: boolean;
   jekyllVersion?: string;
   jarPath?: string;
@@ -249,6 +250,7 @@ export interface PublisherBuildOpts {
   mode: "full" | "fast" | "local-tx";
   txUrl?: string;
   javaExe?: string;
+  rubyBinDir?: string;
 }
 
 export async function publisherDetect(root: string): Promise<PublisherSetup> {

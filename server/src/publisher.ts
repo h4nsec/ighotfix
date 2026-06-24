@@ -15,6 +15,7 @@ export interface PublisherSetup {
   javaExe?: string;         // explicit path to use (may differ from PATH java)
   rubyOk: boolean;
   rubyVersion?: string;
+  rubyBinDir?: string;      // parent dir of the found ruby exe, for PATH injection
   jekyllOk: boolean;
   jekyllVersion?: string;
   jarPath?: string;
@@ -26,7 +27,8 @@ export interface BuildOptions {
   mode: "full" | "fast" | "local-tx";
   txUrl?: string;
   root: string;
-  javaExe?: string; // if set, use this instead of "java" from PATH
+  javaExe?: string;    // if set, use this instead of "java" from PATH
+  rubyBinDir?: string; // if set, prepend to PATH so Jekyll can find ruby.exe
 }
 
 export type BuildEvent =
@@ -188,6 +190,8 @@ export async function detectSetup(root: string): Promise<PublisherSetup> {
   // Trim verbose ruby output: "ruby 3.3.0 (2024-01-18 revision ...) [x64-...]" → "ruby 3.3.0"
   const rubyVersion = rubyRaw ? rubyRaw.replace(/\s*\(.*/, "").trim() : undefined;
   const jekyllVersion = jekyllRaw;
+  // Only set rubyBinDir when we found ruby via a non-PATH location — PATH ruby is already inherited.
+  const rubyBinDir = rubyExe !== "ruby" ? path.dirname(rubyExe) : undefined;
 
   const home = os.homedir();
   const searchedPaths = [
@@ -201,7 +205,7 @@ export async function detectSetup(root: string): Promise<PublisherSetup> {
   const jarPath = searchedPaths.find((p) => existsSync(p));
   return {
     javaOk, javaVersion, javaMajor, javaCompatible, javaExe,
-    rubyOk, rubyVersion, jekyllOk, jekyllVersion,
+    rubyOk, rubyVersion, rubyBinDir, jekyllOk, jekyllVersion,
     jarPath, searchedPaths,
   };
 }
@@ -296,10 +300,17 @@ export function startBuild(
       isWarning: false,
     });
 
+    // Prepend the Ruby bin dir so that when Java spawns jekyll.bat,
+    // the batch file can find ruby.exe even if it's not in the inherited PATH.
+    const spawnEnv = opts.rubyBinDir
+      ? { ...process.env, PATH: `${opts.rubyBinDir}${path.delimiter}${process.env.PATH ?? ""}` }
+      : process.env;
+
     const child = spawn(javaExe, args, {
       cwd: opts.root,
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
+      env: spawnEnv,
     });
 
     let cancelled = false;

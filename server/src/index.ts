@@ -334,18 +334,18 @@ function streamPublisher(
 app.post("/api/publisher/build", (req, res) => {
   const root = requireRoot(res);
   if (!root) return;
-  const { jarPath, mode, txUrl, javaExe } = req.body ?? {};
+  const { jarPath, mode, txUrl, javaExe, rubyBinDir } = req.body ?? {};
   if (!jarPath) return res.status(400).json({ error: "jarPath is required." });
 
   streamPublisher(res, (onEvent, signal) =>
-    publisherOps.startBuild({ root, jarPath, mode: mode ?? "full", txUrl, javaExe }, onEvent, signal),
+    publisherOps.startBuild({ root, jarPath, mode: mode ?? "full", txUrl, javaExe, rubyBinDir }, onEvent, signal),
   );
 });
 
 app.post("/api/publisher/watch", (req, res) => {
   const root = requireRoot(res);
   if (!root) return;
-  const { jarPath, mode, txUrl, javaExe } = req.body ?? {};
+  const { jarPath, mode, txUrl, javaExe, rubyBinDir } = req.body ?? {};
   if (!jarPath) return res.status(400).json({ error: "jarPath is required." });
 
   res.setHeader("Content-Type", "application/x-ndjson");
@@ -357,7 +357,7 @@ app.post("/api/publisher/watch", (req, res) => {
   };
 
   const stop = publisherOps.startWatch(
-    { root, jarPath, mode: mode ?? "full", txUrl, javaExe },
+    { root, jarPath, mode: mode ?? "full", txUrl, javaExe, rubyBinDir },
     (e) => {
       write(e);
       if (e.type === "stopped" && !res.writableEnded) res.end();
