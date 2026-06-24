@@ -193,7 +193,9 @@ export function PublisherPanel({
   }
 
   const effectiveJar = jarPath || setup?.jarPath || "";
-  const ready = !!effectiveJar && (setup?.javaOk ?? true);
+  const javaDetected = setup !== null;
+  const javaCompatible = !javaDetected || (setup?.javaOk && setup?.javaCompatible !== false);
+  const ready = !!effectiveJar && !!setup?.javaOk && (setup?.javaCompatible ?? true);
 
   return (
     <div className="modal-backdrop" onClick={() => !building && onClose()}>
@@ -246,6 +248,7 @@ export function PublisherPanel({
             building={building}
             watching={watching}
             ready={ready}
+            javaCompatible={javaCompatible}
             onBuild={runBuild}
             onWatch={startWatch}
             onCancel={cancel}
@@ -271,7 +274,7 @@ export function PublisherPanel({
 function BuildTab({
   jarPath, setJarPath, mode, setMode, txUrl, setTxUrl,
   log, logRef, autoScrollRef, summary,
-  building, watching, ready,
+  building, watching, ready, javaCompatible,
   onBuild, onWatch, onCancel, onClearLog, setup,
 }: {
   jarPath: string; setJarPath: (v: string) => void;
@@ -280,7 +283,7 @@ function BuildTab({
   log: LogLine[]; logRef: React.RefObject<HTMLDivElement>;
   autoScrollRef: React.MutableRefObject<boolean>;
   summary: { errors: number; warnings: number; durationMs: number } | null;
-  building: boolean; watching: boolean; ready: boolean;
+  building: boolean; watching: boolean; ready: boolean; javaCompatible: boolean;
   onBuild: () => void; onWatch: () => void; onCancel: () => void;
   onClearLog: () => void;
   setup: PublisherSetup | null;
@@ -333,6 +336,16 @@ function BuildTab({
         </div>
       )}
 
+      {/* Java version warning */}
+      {setup && setup.javaOk && !setup.javaCompatible && (
+        <div className="pub-callout pub-callout-error">
+          <strong>Java {setup.javaMajor ?? setup.javaVersion} detected — Java 17 or later is required.</strong>
+          {" "}IG Publisher will not run on older versions. Install{" "}
+          <a href="https://adoptium.net" target="_blank" rel="noreferrer">Temurin JDK 17+</a>
+          {" "}and restart the app.
+        </div>
+      )}
+
       {/* Actions */}
       <div className="pub-actions">
         {!building ? (
@@ -341,7 +354,11 @@ function BuildTab({
               className="primary"
               onClick={onBuild}
               disabled={!effectiveJar || !ready}
-              title={!setup?.javaOk ? "Java not found — see Setup tab" : !effectiveJar ? "publisher.jar path required" : ""}
+              title={
+                !setup?.javaOk ? "Java not found — see Setup tab" :
+                !setup?.javaCompatible ? `Java ${setup?.javaMajor ?? setup?.javaVersion} is too old — Java 17+ required` :
+                !effectiveJar ? "publisher.jar path required" : ""
+              }
             >
               <Play size={13} /> Build
             </button>
@@ -434,13 +451,20 @@ function SetupTab({
             <td>
               {detecting ? (
                 <span className="muted">Detecting…</span>
-              ) : setup?.javaOk ? (
-                <span className="good"><Check size={13} /> Java {setup.javaVersion ?? "detected"}</span>
-              ) : (
+              ) : !setup?.javaOk ? (
                 <span className="bad">
                   <AlertTriangle size={13} /> Not found —{" "}
                   <a href="https://adoptium.net" target="_blank" rel="noreferrer">
                     Download Temurin (JDK 17+)
+                  </a>
+                </span>
+              ) : setup.javaCompatible ? (
+                <span className="good"><Check size={13} /> Java {setup.javaVersion ?? "detected"}</span>
+              ) : (
+                <span className="bad">
+                  <AlertTriangle size={13} /> Java {setup.javaVersion ?? setup.javaMajor} — too old (need 17+).{" "}
+                  <a href="https://adoptium.net" target="_blank" rel="noreferrer">
+                    Download Temurin JDK 17+
                   </a>
                 </span>
               )}

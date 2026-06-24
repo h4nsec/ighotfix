@@ -1387,6 +1387,7 @@ table.sp-table tr.add-row input { background: transparent; border-color: var(--b
   gap: 6px;
 }
 .pub-callout.info { border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.pub-callout.pub-callout-error { border-color: color-mix(in srgb, var(--danger) 50%, transparent); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
 .pub-callout-title { font-weight: 600; font-size: 12px; color: var(--muted-2); }
 .pub-callout p { margin: 0; }
 

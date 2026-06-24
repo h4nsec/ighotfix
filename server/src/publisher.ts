@@ -10,6 +10,8 @@ const execFileP = promisify(execFile);
 export interface PublisherSetup {
   javaOk: boolean;
   javaVersion?: string;
+  javaMajor?: number;
+  javaCompatible?: boolean; // true when major >= 17
   jarPath?: string;
   searchedPaths: string[];
 }
@@ -35,6 +37,7 @@ export type BuildEvent =
 export async function detectSetup(root: string): Promise<PublisherSetup> {
   let javaOk = false;
   let javaVersion: string | undefined;
+  let javaMajor: number | undefined;
   try {
     // java -version writes to stderr
     const r = await execFileP("java", ["-version"], { timeout: 10_000 });
@@ -42,9 +45,17 @@ export async function detectSetup(root: string): Promise<PublisherSetup> {
     javaOk = true;
     const m = /version "([^"]+)"/.exec(output);
     javaVersion = m?.[1];
-  } catch (e: any) {
+    if (javaVersion) {
+      // "1.8.x" → 8, "17.0.x" → 17, "21" → 21
+      const parts = javaVersion.split(".");
+      const first = Number(parts[0]);
+      javaMajor = first === 1 ? Number(parts[1]) : first;
+    }
+  } catch {
     // java not on PATH or failed — javaOk stays false
   }
+
+  const javaCompatible = javaMajor !== undefined && javaMajor >= 17;
 
   const home = os.homedir();
   const searchedPaths = [
@@ -56,7 +67,7 @@ export async function detectSetup(root: string): Promise<PublisherSetup> {
   ];
 
   const jarPath = searchedPaths.find((p) => existsSync(p));
-  return { javaOk, javaVersion, jarPath, searchedPaths };
+  return { javaOk, javaVersion, javaMajor, javaCompatible, jarPath, searchedPaths };
 }
 
 // ── Output parsing ────────────────────────────────────────────

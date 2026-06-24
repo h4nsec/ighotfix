@@ -224,6 +224,8 @@ export function saveFile(artifactId: string, text: string): Promise<{ ok: boolea
 export interface PublisherSetup {
   javaOk: boolean;
   javaVersion?: string;
+  javaMajor?: number;
+  javaCompatible?: boolean;
   jarPath?: string;
   searchedPaths: string[];
 }
