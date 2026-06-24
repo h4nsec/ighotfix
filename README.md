@@ -169,7 +169,7 @@ npm run build
 ## Limitations
 
 - **No push / pull** — clone and local commits only; use your normal git client for remote operations.
-- **Private repos** — clone requires a public URL; repos that need a credential prompt will fail fast rather than hang (`GIT_TERMINAL_PROMPT=0`).
+- **Private repos** — clone inherits your system git credentials (Credential Manager, Keychain, SSH keys, stored PATs), so repos you've already authenticated will work. Repos with no stored credentials fail fast rather than hanging (`GIT_TERMINAL_PROMPT=0`).
 - **Snapshot generation** — the snapshot view reads pre-built snapshot JSON if present alongside the source; it does not invoke IG Publisher to build one.
 - **Terminology filters** — ValueSet includes that use `filter` rules are read-only in the structured editor; edit them in the raw source view.
 - **FSH profiles** — generic path edits (`setValue` / `addValue` / `removeValue`) target `Instance:` entities. `Profile:` and `Extension:` FSH entities use the rule-based editor for cardinality, bindings, flags, slices, and extensions.
