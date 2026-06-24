@@ -310,21 +310,25 @@ app.post("/api/publisher/detect", async (req, res) => {
 
 function streamPublisher(
   res: express.Response,
-  req: express.Request,
-  run: (onEvent: (e: publisherOps.BuildEvent) => void, signal: AbortSignal) => void,
+  run: (onEvent: (e: publisherOps.BuildEvent) => void, signal: AbortSignal) => Promise<void>,
 ) {
   res.setHeader("Content-Type", "application/x-ndjson");
   res.flushHeaders();
   const ac = new AbortController();
   let finished = false;
-  req.on("close", () => { if (!finished) ac.abort(); });
+  // Use res.on("close") — fires on premature disconnect, same as the clone route.
+  // req.on("close") can fire as soon as the request body is consumed, which is too early.
+  res.on("close", () => { if (!finished) ac.abort(); });
   const write = (obj: unknown) => {
     if (res.writableEnded) return;
     try { res.write(JSON.stringify(obj) + "\n"); } catch { /* client gone */ }
   };
-  run(write, ac.signal);
-  // The run function may be async (build) or synchronous-start (watch);
-  // we never forcefully end the response — it ends when done/stopped is written.
+  run(write, ac.signal)
+    .catch(() => { /* errors are surfaced as output events by the run function */ })
+    .finally(() => {
+      finished = true;
+      if (!res.writableEnded) res.end();
+    });
 }
 
 app.post("/api/publisher/build", (req, res) => {
@@ -333,10 +337,9 @@ app.post("/api/publisher/build", (req, res) => {
   const { jarPath, mode, txUrl } = req.body ?? {};
   if (!jarPath) return res.status(400).json({ error: "jarPath is required." });
 
-  streamPublisher(res, req, async (onEvent, signal) => {
-    await publisherOps.startBuild({ root, jarPath, mode: mode ?? "full", txUrl }, onEvent, signal);
-    if (!res.writableEnded) res.end();
-  });
+  streamPublisher(res, (onEvent, signal) =>
+    publisherOps.startBuild({ root, jarPath, mode: mode ?? "full", txUrl }, onEvent, signal),
+  );
 });
 
 app.post("/api/publisher/watch", (req, res) => {
@@ -361,7 +364,7 @@ app.post("/api/publisher/watch", (req, res) => {
     },
   );
 
-  req.on("close", stop);
+  res.on("close", stop);
 });
 
 function idToRel(id: string): string {
