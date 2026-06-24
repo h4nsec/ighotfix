@@ -1,35 +1,175 @@
 # IG Builder
 
-A visual editor for FHIR Implementation Guides. Load an IG written in **FSH**, **JSON**, or **XML**, edit profiles, extensions, slices, cardinality, bindings, terminology, capability statements and search parameters in a visual UI, and write changes **back to the original source language** — without running a 45-minute IG Publisher build.
+A local visual editor for [FHIR Implementation Guides](https://www.hl7.org/fhir/implementationguide.html) that writes changes back to your original source files — without regenerating them.
 
-## Design principles
+IG Publisher builds take 45 minutes. IG Builder lets you edit profiles, terminology, capability statements, and guide metadata in a browser UI and saves the result as a surgical splice of the source text, preserving comments, ordering, and whitespace.
 
-- **Format-preserving round-trip.** Edits are applied as surgical, minimal-diff splices to the original source text. Comments, ordering and whitespace are preserved. We never blindly regenerate the source.
-- **Canonical model in the middle.** Each source language has an *adapter* that loads source → a canonical `ProfileView`/artifact model, and applies structured `Edit`s back to the precise text span in the source.
-- **Local-first.** A small Node server provides filesystem access and parsing; a React client is the visual editor.
+---
+
+## Features
+
+### Profile & Extension Editing
+- Browse every StructureDefinition (profile or extension) in the IG
+- Edit element cardinality, value-set bindings, and boolean flags (MS / SU / ?!) per element
+- Add elements from the base type that aren't yet in the differential
+- Add named slices and extension usages with discriminators
+- Snapshot-aware view — toggle between key elements, differential-only, or full snapshot
+
+### Terminology
+- Structured editor for **ValueSet** — metadata, compose includes, and explicit concept lists
+- Structured editor for **CodeSystem** — metadata, content type, case sensitivity, and the full concept table (code / display / definition) with add and remove
+- Filter-based includes show a read-only hint; switch to the raw source editor for those
+
+### Capability Statements
+- REST resource matrix: profile, interactions (toggles), and search parameters
+- **SHALL / SHOULD / MAY / SHOULD-NOT** conformance on both interactions and search params via the `capabilitystatement-expectation` extension
+- Per-interaction and per-search-param documentation fields
+
+### Implementation Guide Metadata
+- Metadata fields: id, version, FHIR version, publisher, license, description
+- Dependency table (`dependsOn`), build parameters
+- Filterable resource definition table (handles hundreds of entries)
+- Recursive page tree with title and generation type
+
+### Source Round-Trip — All Three Languages
+Every edit is a precise text splice; the original file is never regenerated.
+
+| Language | Mechanism |
+|----------|-----------|
+| **FSH** | Offset-tracking rule locator; surgical line splice; `://`-safe comment stripping; soft-index (`[+]` / `[=]`) resolution |
+| **JSON** | `jsonc-parser` minimal-diff; comments and formatting preserved |
+| **XML** | Dependency-free position-tracking scanner; canonical ElementDefinition child order; `url`-as-attribute extension convention |
+
+FSH conformance resources (`Instance: … InstanceOf: SearchParameter`) are normalised to objects and edited through the same assignment-rule engine, preserving `#code` vs `"string"` value styles and reindexing sibling array elements on remove.
+
+### All File Types
+The sidebar surfaces every file in an IG folder — FSH, JSON, XML, Markdown pages, `sushi-config.yaml`, `ig.ini`, `package.json`, `menu.xml`. Every artifact has at least a raw source editor; FHIR resources with a structured editor offer a toggle between the two views.
+
+### Git Integration
+- Branch chip in the top bar — current branch name and dirty indicator
+- **Git panel**: init repo, switch / create branches, selective file staging, commit staged changes, coloured unified diff, commit log
+- **Clone from remote**: streams NDJSON progress to a progress bar; real cancel kills the process tree and removes the partial clone; public repos only (private repos that need a credential prompt fail fast rather than hanging)
+
+### Folder Browser
+Native-style folder picker with breadcrumb navigation, drive listing on Windows, and IG-marker highlighting (detects `sushi-config.yaml`, `ig.ini`, `package.json`).
+
+---
+
+## Getting Started
+
+**Prerequisites:** Node.js 18+ and npm 8+.
+
+```bash
+git clone <repo-url>
+cd ig-builder
+npm install
+npm run dev
+```
+
+| Service | URL |
+|---------|-----|
+| Client (Vite + React) | http://localhost:5173 |
+| Server (Express API) | http://localhost:4000 |
+
+Open the client, enter the path to your IG root folder (or use **Browse…**), and click **Load IG**. The last-used path is remembered in `localStorage`.
+
+---
+
+## Project Structure
+
+```
+ig-builder/
+├── shared/              # @igb/shared — canonical model, Edit types, path parser
+│   └── src/index.ts
+├── server/              # Express API — file I/O, adapters, git wrapper
+│   └── src/
+│       ├── adapters/
+│       │   ├── fsh.ts        # FSH adapter + Instance normaliser
+│       │   ├── json.ts       # JSON adapter (jsonc-parser)
+│       │   ├── xml.ts        # XML adapter (xml-scan.ts scanner)
+│       │   └── *.test.ts     # 78 vitest round-trip tests
+│       ├── loader.ts         # IG discovery & classification
+│       ├── resource.ts       # ResourceView builder
+│       ├── git.ts            # Git CLI wrapper
+│       ├── create.ts         # New-artifact scaffolding (SP / CS skeletons)
+│       └── browse.ts         # Folder browser API
+└── client/              # Vite + React + TypeScript UI
+    └── src/
+        ├── App.tsx                       # Shell, sidebar, ProfileEditor
+        ├── CapabilityStatementEditor.tsx
+        ├── ImplementationGuideEditor.tsx
+        ├── SearchParameterEditor.tsx
+        ├── TerminologyEditor.tsx         # ValueSet + CodeSystem
+        ├── TextEditor.tsx                # Raw source fallback
+        ├── ResourceViewer.tsx            # Read-only resource sections
+        ├── GitPanel.tsx
+        ├── CloneDialog.tsx
+        └── FolderPicker.tsx
+```
+
+---
 
 ## Architecture
 
-```
-shared/   Canonical model + API contract types (shared by client & server)
-server/   Express API: loads an IG directory, builds the model, applies edits
-  src/adapters/   per-language load + edit (json, fsh, xml)
-client/   Vite + React visual editor
-fixtures/ Sample IG artifacts for development & tests
-```
+### Edit Engine
 
-## v1 scope (current)
+The shared `Edit` union type is source-language agnostic. Each adapter implements three methods:
 
-Load IG → parse StructureDefinitions (profiles) → edit element **cardinality** and **bindings** → write back to source, preserving formatting. JSON and FSH adapters first; XML next.
-
-## Running
-
-```
-npm install
-npm run dev        # starts server (4000) + client (5173)
+```typescript
+describe(src)                → Artifact       // classify the file
+toProfileView(src, artifact) → ProfileView    // StructureDefinition only
+computeChanges(src, edits)   → TextChange[]  // precise text splices
 ```
 
-Then open http://localhost:5173 and click **Browse…** to navigate to an IG folder
-(a directory of `.fsh`, `.json`, `.xml` artifacts) — folders that look like an IG
-root are flagged, and a file-count hint shows what will load. You can still paste an
-absolute path into the box instead.
+Generic path-based edits (`setValue`, `addValue`, `removeValue`) address any FHIR element by a dot-path with `[n]` array indices — e.g. `rest[0].resource[2].interaction[1].code`. All three adapters implement this for arbitrary resource shapes. The structured editors are pure React UI over the same engine: they emit `Edit[]` objects; the server splices them into the source text.
+
+### Pending Edit Flow
+
+```
+User action → Edit queued in client state
+           → Pending bar shows "N unsaved change(s)"
+           → POST /api/edits { edits, write: true }
+           → Server applies batch to source text → writes to disk
+           → Client reloads the artifact view
+```
+
+Repeated `setValue` edits to the same path are collapsed so only the latest value is sent. The UI reflects pending edits immediately via `valueOf` helpers that walk the pending queue before falling back to the base data.
+
+---
+
+## Commands
+
+```bash
+# Start both server and client in watch mode
+npm run dev
+
+# Run the server test suite (78 tests)
+npm test
+
+# Type-check the client
+cd client && npx tsc --noEmit
+
+# Production build (shared → server → client)
+npm run build
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Client | React 18, TypeScript, Vite 6, Lucide React |
+| Server | Node.js, Express 4, `jsonc-parser`, `fast-glob`, `tsx` |
+| Tests | Vitest |
+| Monorepo | npm workspaces (`shared`, `server`, `client`) |
+
+---
+
+## Limitations
+
+- **No push / pull** — clone and local commits only; use your normal git client for remote operations.
+- **Private repos** — clone requires a public URL; repos that need a credential prompt will fail fast rather than hang (`GIT_TERMINAL_PROMPT=0`).
+- **Snapshot generation** — the snapshot view reads pre-built snapshot JSON if present alongside the source; it does not invoke IG Publisher to build one.
+- **Terminology filters** — ValueSet includes that use `filter` rules are read-only in the structured editor; edit them in the raw source view.
+- **FSH profiles** — generic path edits (`setValue` / `addValue` / `removeValue`) target `Instance:` entities. `Profile:` and `Extension:` FSH entities use the rule-based editor for cardinality, bindings, flags, slices, and extensions.
