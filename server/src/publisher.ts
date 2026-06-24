@@ -1,6 +1,6 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { watch, type FSWatcher } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -76,9 +76,8 @@ function extraJavaCandidates(): string[] {
     }
     // Program Files vendors: each subdirectory is a JDK install.
     try {
-      const { readdirSync } = require("node:fs") as typeof import("node:fs");
-      for (const entry of readdirSync(root)) {
-        candidates.push(path.join(root, entry, "bin", "java.exe"));
+      for (const entry of readdirSync(root, { withFileTypes: false })) {
+        candidates.push(path.join(root, String(entry), "bin", "java.exe"));
       }
     } catch {
       // Directory doesn't exist — skip.
