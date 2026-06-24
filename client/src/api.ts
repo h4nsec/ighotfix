@@ -226,6 +226,7 @@ export interface PublisherSetup {
   javaVersion?: string;
   javaMajor?: number;
   javaCompatible?: boolean;
+  javaExe?: string;
   jarPath?: string;
   searchedPaths: string[];
 }
@@ -243,6 +244,7 @@ export interface PublisherBuildOpts {
   jarPath: string;
   mode: "full" | "fast" | "local-tx";
   txUrl?: string;
+  javaExe?: string;
 }
 
 export async function publisherDetect(root: string): Promise<PublisherSetup> {

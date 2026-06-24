@@ -145,6 +145,7 @@ export function PublisherPanel({
     jarPath,
     mode,
     txUrl: mode === "local-tx" ? txUrl : undefined,
+    javaExe: setup?.javaExe,
   };
 
   function canBuild() {
@@ -459,7 +460,10 @@ function SetupTab({
                   </a>
                 </span>
               ) : setup.javaCompatible ? (
-                <span className="good"><Check size={13} /> Java {setup.javaVersion ?? "detected"}</span>
+                <span className="good">
+                  <Check size={13} /> Java {setup.javaVersion ?? "detected"}
+                  {setup.javaExe && <span className="muted" style={{ marginLeft: 6, fontSize: 11 }}>({setup.javaExe})</span>}
+                </span>
               ) : (
                 <span className="bad">
                   <AlertTriangle size={13} /> Java {setup.javaVersion ?? setup.javaMajor} — too old (need 17+).{" "}

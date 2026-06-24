@@ -12,6 +12,7 @@ export interface PublisherSetup {
   javaVersion?: string;
   javaMajor?: number;
   javaCompatible?: boolean; // true when major >= 17
+  javaExe?: string;         // explicit path to use (may differ from PATH java)
   jarPath?: string;
   searchedPaths: string[];
 }
@@ -21,6 +22,7 @@ export interface BuildOptions {
   mode: "full" | "fast" | "local-tx";
   txUrl?: string;
   root: string;
+  javaExe?: string; // if set, use this instead of "java" from PATH
 }
 
 export type BuildEvent =
@@ -34,27 +36,77 @@ export type BuildEvent =
 
 // ── Setup detection ───────────────────────────────────────────
 
-export async function detectSetup(root: string): Promise<PublisherSetup> {
-  let javaOk = false;
-  let javaVersion: string | undefined;
-  let javaMajor: number | undefined;
+/** Try to get the Java major version for a given executable. Returns undefined on failure. */
+async function probeJava(exe: string): Promise<{ version: string; major: number } | undefined> {
   try {
-    // java -version writes to stderr
-    const r = await execFileP("java", ["-version"], { timeout: 10_000 });
+    const r = await execFileP(exe, ["-version"], { timeout: 8_000 });
     const output = (r.stderr || r.stdout || "").toString();
-    javaOk = true;
     const m = /version "([^"]+)"/.exec(output);
-    javaVersion = m?.[1];
-    if (javaVersion) {
-      // "1.8.x" → 8, "17.0.x" → 17, "21" → 21
-      const parts = javaVersion.split(".");
-      const first = Number(parts[0]);
-      javaMajor = first === 1 ? Number(parts[1]) : first;
-    }
+    if (!m) return undefined;
+    const version = m[1];
+    const parts = version.split(".");
+    const first = Number(parts[0]);
+    const major = first === 1 ? Number(parts[1]) : first;
+    if (isNaN(major)) return undefined;
+    return { version, major };
   } catch {
-    // java not on PATH or failed — javaOk stays false
+    return undefined;
+  }
+}
+
+/** Candidate java.exe paths to try beyond the system PATH. Windows-specific roots. */
+function extraJavaCandidates(): string[] {
+  if (process.platform !== "win32") return [];
+  const roots = [
+    process.env["JAVA_HOME"],
+    process.env["JDK_HOME"],
+    "C:\\Program Files\\Eclipse Adoptium",
+    "C:\\Program Files\\Microsoft",
+    "C:\\Program Files\\Java",
+    "C:\\Program Files\\Amazon Corretto",
+    "C:\\Program Files\\Azul Systems\\Zulu",
+  ].filter(Boolean) as string[];
+
+  const candidates: string[] = [];
+  for (const root of roots) {
+    // JAVA_HOME / JDK_HOME point directly to the JDK directory.
+    if (root === process.env["JAVA_HOME"] || root === process.env["JDK_HOME"]) {
+      candidates.push(path.join(root, "bin", "java.exe"));
+      continue;
+    }
+    // Program Files vendors: each subdirectory is a JDK install.
+    try {
+      const { readdirSync } = require("node:fs") as typeof import("node:fs");
+      for (const entry of readdirSync(root)) {
+        candidates.push(path.join(root, entry, "bin", "java.exe"));
+      }
+    } catch {
+      // Directory doesn't exist — skip.
+    }
+  }
+  return candidates;
+}
+
+export async function detectSetup(root: string): Promise<PublisherSetup> {
+  // Try the PATH java first.
+  let best = await probeJava("java");
+  let javaExe: string | undefined;
+
+  if (!best || best.major < 17) {
+    // Search well-known install locations for a compatible version.
+    for (const candidate of extraJavaCandidates()) {
+      if (!existsSync(candidate)) continue;
+      const info = await probeJava(candidate);
+      if (info && info.major >= 17 && (!best || info.major > best.major)) {
+        best = info;
+        javaExe = candidate;
+      }
+    }
   }
 
+  const javaOk = !!best;
+  const javaVersion = best?.version;
+  const javaMajor = best?.major;
   const javaCompatible = javaMajor !== undefined && javaMajor >= 17;
 
   const home = os.homedir();
@@ -67,7 +119,7 @@ export async function detectSetup(root: string): Promise<PublisherSetup> {
   ];
 
   const jarPath = searchedPaths.find((p) => existsSync(p));
-  return { javaOk, javaVersion, javaMajor, javaCompatible, jarPath, searchedPaths };
+  return { javaOk, javaVersion, javaMajor, javaCompatible, javaExe, jarPath, searchedPaths };
 }
 
 // ── Output parsing ────────────────────────────────────────────
@@ -141,6 +193,7 @@ export function startBuild(
       return resolve();
     }
 
+    const javaExe = opts.javaExe ?? "java";
     const args = [
       "-Xmx4g",
       "-jar",
@@ -153,12 +206,12 @@ export function startBuild(
     // Emit the exact command so the user can reproduce it in a terminal.
     onEvent({
       type: "output",
-      line: `Running: java ${args.join(" ")}`,
+      line: `Running: "${javaExe}" ${args.join(" ")}`,
       isError: false,
       isWarning: false,
     });
 
-    const child = spawn("java", args, {
+    const child = spawn(javaExe, args, {
       cwd: opts.root,
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
