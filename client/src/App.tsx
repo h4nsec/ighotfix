@@ -20,6 +20,7 @@ import { TerminologyEditor } from "./TerminologyEditor.js";
 import { NewArtifactDialog } from "./NewArtifactDialog.js";
 import { GitPanel } from "./GitPanel.js";
 import { CloneDialog } from "./CloneDialog.js";
+import { PublisherPanel } from "./PublisherPanel.js";
 import {
   AlertTriangle,
   BookOpen,
@@ -29,6 +30,7 @@ import {
   FileCode2,
   GitBranch,
   Info,
+  Play,
   Plus,
   X,
 } from "lucide-react";
@@ -68,6 +70,7 @@ export function App() {
   const [creating, setCreating] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
   const [cloning, setCloning] = useState(false);
+  const [publisherOpen, setPublisherOpen] = useState(false);
   const [git, setGit] = useState<GitStatus | null>(null);
   const [filter, setFilter] = useState("");
 
@@ -210,6 +213,15 @@ export function App() {
             )}
           </button>
         )}
+        {artifacts.length > 0 && (
+          <button
+            className="publisher-chip"
+            onClick={() => setPublisherOpen(true)}
+            title="Run IG Publisher"
+          >
+            <Play size={13} /> Publisher
+          </button>
+        )}
       </div>
 
       {picking && (
@@ -240,6 +252,7 @@ export function App() {
       )}
 
       {gitOpen && <GitPanel onClose={() => setGitOpen(false)} onChanged={refreshGit} />}
+      {publisherOpen && <PublisherPanel root={root} onClose={() => setPublisherOpen(false)} />}
 
       {cloning && (
         <CloneDialog

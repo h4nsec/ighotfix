@@ -13,6 +13,7 @@ import { browse } from "./browse.js";
 import { buildResourceView } from "./resource.js";
 import { createArtifact, type CreateRequest } from "./create.js";
 import * as gitOps from "./git.js";
+import * as publisherOps from "./publisher.js";
 import { sendErr, friendlyMessage } from "./errors.js";
 import { stat } from "node:fs/promises";
 import {
@@ -294,6 +295,73 @@ app.post("/api/edits", async (req, res) => {
   } catch (err) {
     sendErr(res, 500, err);
   }
+});
+
+/* ---------------- publisher ---------------- */
+
+app.post("/api/publisher/detect", async (req, res) => {
+  const root = (req.body?.root as string | undefined) ?? currentRoot ?? process.cwd();
+  try {
+    res.json(await publisherOps.detectSetup(path.resolve(root)));
+  } catch (err) {
+    sendErr(res, 500, err);
+  }
+});
+
+function streamPublisher(
+  res: express.Response,
+  req: express.Request,
+  run: (onEvent: (e: publisherOps.BuildEvent) => void, signal: AbortSignal) => void,
+) {
+  res.setHeader("Content-Type", "application/x-ndjson");
+  res.flushHeaders();
+  const ac = new AbortController();
+  let finished = false;
+  req.on("close", () => { if (!finished) ac.abort(); });
+  const write = (obj: unknown) => {
+    if (res.writableEnded) return;
+    try { res.write(JSON.stringify(obj) + "\n"); } catch { /* client gone */ }
+  };
+  run(write, ac.signal);
+  // The run function may be async (build) or synchronous-start (watch);
+  // we never forcefully end the response — it ends when done/stopped is written.
+}
+
+app.post("/api/publisher/build", (req, res) => {
+  const root = requireRoot(res);
+  if (!root) return;
+  const { jarPath, mode, txUrl } = req.body ?? {};
+  if (!jarPath) return res.status(400).json({ error: "jarPath is required." });
+
+  streamPublisher(res, req, async (onEvent, signal) => {
+    await publisherOps.startBuild({ root, jarPath, mode: mode ?? "full", txUrl }, onEvent, signal);
+    if (!res.writableEnded) res.end();
+  });
+});
+
+app.post("/api/publisher/watch", (req, res) => {
+  const root = requireRoot(res);
+  if (!root) return;
+  const { jarPath, mode, txUrl } = req.body ?? {};
+  if (!jarPath) return res.status(400).json({ error: "jarPath is required." });
+
+  res.setHeader("Content-Type", "application/x-ndjson");
+  res.flushHeaders();
+
+  const write = (obj: unknown) => {
+    if (res.writableEnded) return;
+    try { res.write(JSON.stringify(obj) + "\n"); } catch { /* client gone */ }
+  };
+
+  const stop = publisherOps.startWatch(
+    { root, jarPath, mode: mode ?? "full", txUrl },
+    (e) => {
+      write(e);
+      if (e.type === "stopped" && !res.writableEnded) res.end();
+    },
+  );
+
+  req.on("close", stop);
 });
 
 function idToRel(id: string): string {

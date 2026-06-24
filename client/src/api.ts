@@ -219,6 +219,95 @@ export function saveFile(artifactId: string, text: string): Promise<{ ok: boolea
   return jpost<{ ok: boolean }>("/api/file", { artifactId, text });
 }
 
+/* ---------------- publisher ---------------- */
+
+export interface PublisherSetup {
+  javaOk: boolean;
+  javaVersion?: string;
+  jarPath?: string;
+  searchedPaths: string[];
+}
+
+export type PublisherEvent =
+  | { type: "output"; line: string; isError: boolean; isWarning: boolean }
+  | { type: "summary"; errors: number; warnings: number; durationMs: number }
+  | { type: "done"; success: boolean; cancelled?: boolean }
+  | { type: "changed"; file: string }
+  | { type: "building"; run: number }
+  | { type: "idle" }
+  | { type: "stopped" };
+
+export interface PublisherBuildOpts {
+  jarPath: string;
+  mode: "full" | "fast" | "local-tx";
+  txUrl?: string;
+}
+
+export async function publisherDetect(root: string): Promise<PublisherSetup> {
+  return jpost<PublisherSetup>("/api/publisher/detect", { root });
+}
+
+async function streamNdjson(
+  url: string,
+  body: unknown,
+  onEvent: (e: any) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (e: any) {
+    if (e?.name === "AbortError" || signal?.aborted) return;
+    throw new Error("Can't reach the server. Make sure the backend is running.");
+  }
+  if (!res.ok || !res.body) throw new Error(await errorFrom(res));
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  for (;;) {
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch (e: any) {
+      if (e?.name === "AbortError" || signal?.aborted) return;
+      throw e;
+    }
+    if (chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try { onEvent(JSON.parse(line)); } catch { /* ignore malformed */ }
+    }
+  }
+}
+
+export function publisherBuild(
+  root: string,
+  opts: PublisherBuildOpts,
+  onEvent: (e: PublisherEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return streamNdjson("/api/publisher/build", { root, ...opts }, onEvent, signal);
+}
+
+export function publisherWatch(
+  root: string,
+  opts: PublisherBuildOpts,
+  onEvent: (e: PublisherEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return streamNdjson("/api/publisher/watch", { root, ...opts }, onEvent, signal);
+}
+
 export function applyEdits(
   artifactId: string,
   edits: Edit[],
