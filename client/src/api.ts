@@ -40,6 +40,16 @@ export function loadIg(root: string): Promise<IgSummary> {
   return jpost<IgSummary>("/api/load", { root });
 }
 
+export async function checkOutputExists(): Promise<boolean> {
+  try {
+    const res = await fetch("/api/output-exists");
+    if (!res.ok) return false;
+    return (await res.json()).exists === true;
+  } catch {
+    return false;
+  }
+}
+
 export interface BrowseDir {
   name: string;
   path: string;
@@ -64,12 +74,14 @@ export async function getHome(): Promise<string> {
 }
 
 export interface CreateArtifactRequest {
-  resourceType: "SearchParameter" | "CapabilityStatement";
+  resourceType: "SearchParameter" | "CapabilityStatement" | "Example";
   id: string;
   name: string;
   language: "json" | "xml" | "fsh";
   dir?: string;
   canonicalBase?: string;
+  fhirResourceType?: string;
+  profile?: string;
 }
 
 export function createArtifact(req: CreateArtifactRequest): Promise<{ artifactId: string }> {
@@ -217,6 +229,105 @@ export function getFile(artifactId: string): Promise<{ artifactId: string; text:
 
 export function saveFile(artifactId: string, text: string): Promise<{ ok: boolean }> {
   return jpost<{ ok: boolean }>("/api/file", { artifactId, text });
+}
+
+/* ---------------- publisher ---------------- */
+
+export interface PublisherSetup {
+  javaOk: boolean;
+  javaVersion?: string;
+  javaMajor?: number;
+  javaCompatible?: boolean;
+  javaExe?: string;
+  rubyOk: boolean;
+  rubyVersion?: string;
+  rubyBinDir?: string;
+  jekyllOk: boolean;
+  jekyllVersion?: string;
+  jarPath?: string;
+  searchedPaths: string[];
+}
+
+export type PublisherEvent =
+  | { type: "output"; line: string; isError: boolean; isWarning: boolean }
+  | { type: "summary"; errors: number; warnings: number; durationMs: number }
+  | { type: "done"; success: boolean; cancelled?: boolean }
+  | { type: "changed"; file: string }
+  | { type: "building"; run: number }
+  | { type: "idle" }
+  | { type: "stopped" };
+
+export interface PublisherBuildOpts {
+  jarPath: string;
+  mode: "full" | "fast" | "local-tx";
+  txUrl?: string;
+  javaExe?: string;
+  rubyBinDir?: string;
+}
+
+export async function publisherDetect(root: string): Promise<PublisherSetup> {
+  return jpost<PublisherSetup>("/api/publisher/detect", { root });
+}
+
+async function streamNdjson(
+  url: string,
+  body: unknown,
+  onEvent: (e: any) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (e: any) {
+    if (e?.name === "AbortError" || signal?.aborted) return;
+    throw new Error("Can't reach the server. Make sure the backend is running.");
+  }
+  if (!res.ok || !res.body) throw new Error(await errorFrom(res));
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  for (;;) {
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch (e: any) {
+      if (e?.name === "AbortError" || signal?.aborted) return;
+      throw e;
+    }
+    if (chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try { onEvent(JSON.parse(line)); } catch { /* ignore malformed */ }
+    }
+  }
+}
+
+export function publisherBuild(
+  root: string,
+  opts: PublisherBuildOpts,
+  onEvent: (e: PublisherEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return streamNdjson("/api/publisher/build", { root, ...opts }, onEvent, signal);
+}
+
+export function publisherWatch(
+  root: string,
+  opts: PublisherBuildOpts,
+  onEvent: (e: PublisherEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return streamNdjson("/api/publisher/watch", { root, ...opts }, onEvent, signal);
 }
 
 export function applyEdits(

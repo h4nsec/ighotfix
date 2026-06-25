@@ -9,7 +9,7 @@ import type {
   ResourceView,
 } from "@igb/shared";
 import { FLAG_LABELS } from "@igb/shared";
-import { applyEdits, getProfile, getResource, gitStatus, loadIg, type GitStatus } from "./api.js";
+import { applyEdits, checkOutputExists, getProfile, getResource, gitStatus, loadIg, type GitStatus } from "./api.js";
 import { FolderPicker } from "./FolderPicker.js";
 import { ResourceViewer } from "./ResourceViewer.js";
 import { TextEditor } from "./TextEditor.js";
@@ -17,18 +17,22 @@ import { SearchParameterEditor } from "./SearchParameterEditor.js";
 import { CapabilityStatementEditor } from "./CapabilityStatementEditor.js";
 import { ImplementationGuideEditor } from "./ImplementationGuideEditor.js";
 import { TerminologyEditor } from "./TerminologyEditor.js";
+import { ExampleEditor } from "./ExampleEditor.js";
 import { NewArtifactDialog } from "./NewArtifactDialog.js";
 import { GitPanel } from "./GitPanel.js";
 import { CloneDialog } from "./CloneDialog.js";
+import { PublisherPanel } from "./PublisherPanel.js";
 import {
   AlertTriangle,
   BookOpen,
   ChevronDown,
   ChevronRight,
   CornerDownRight,
+  ExternalLink,
   FileCode2,
   GitBranch,
   Info,
+  Play,
   Plus,
   X,
 } from "lucide-react";
@@ -68,8 +72,11 @@ export function App() {
   const [creating, setCreating] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
   const [cloning, setCloning] = useState(false);
+  const [publisherOpen, setPublisherOpen] = useState(false);
   const [git, setGit] = useState<GitStatus | null>(null);
   const [filter, setFilter] = useState("");
+  const [commentsDismissed, setCommentsDismissed] = useState(false);
+  const [outputExists, setOutputExists] = useState(false);
 
   async function refreshGit() {
     try {
@@ -97,6 +104,7 @@ export function App() {
       localStorage.setItem("igb-root", target);
       if (summary.warning) setNotice(summary.warning);
       refreshGit();
+      checkOutputExists().then(setOutputExists);
     } catch (e) {
       setError(`Couldn't load IG — ${errMsg(e)}`);
     } finally {
@@ -113,6 +121,7 @@ export function App() {
     setProfile(null);
     setResource(null);
     setSourceMode(false);
+    setCommentsDismissed(false);
     try {
       if (a.editable) setProfile(await getProfile(a.id));
       else if (a.resourceType) setResource(await getResource(a.id));
@@ -182,22 +191,22 @@ export function App() {
           placeholder="Path to IG folder…"
           spellCheck={false}
         />
-        <button onClick={() => setPicking(true)} disabled={busy}>
+        <button onClick={() => setPicking(true)} disabled={busy} title="Browse your file system to find an IG folder">
           Browse…
         </button>
-        <button onClick={() => setCloning(true)} disabled={busy} title="Clone a git repository">
+        <button onClick={() => setCloning(true)} disabled={busy} title="Clone a git repository into a new local folder">
           Clone…
         </button>
-        <button className="primary" onClick={() => doLoad()} disabled={busy}>
+        <button className="primary" onClick={() => doLoad()} disabled={busy} title="Scan the folder and load all FHIR artifacts into the sidebar">
           Load IG
         </button>
         {artifacts.length > 0 && (
-          <button onClick={() => setCreating(true)} disabled={busy} title="Create a new artifact">
+          <button onClick={() => setCreating(true)} disabled={busy} title="Create a new FHIR artifact (SearchParameter, CapabilityStatement, or Example)">
             <Plus size={13} /> New
           </button>
         )}
         {artifacts.length > 0 && (
-          <button className="git-chip" onClick={() => setGitOpen(true)} title="Git">
+          <button className="git-chip" onClick={() => setGitOpen(true)} title="Open Git panel — stage, commit, and manage branches">
             {git?.isRepo ? (
               <>
                 <GitBranch size={13} className="git-icon" /> {git.branch}
@@ -208,6 +217,24 @@ export function App() {
                 <GitBranch size={13} className="git-icon" /> git
               </>
             )}
+          </button>
+        )}
+        {artifacts.length > 0 && (
+          <button
+            className="publisher-chip"
+            onClick={() => setPublisherOpen(true)}
+            title="Run IG Publisher"
+          >
+            <Play size={13} /> Publisher
+          </button>
+        )}
+        {outputExists && (
+          <button
+            className="output-chip"
+            onClick={() => window.open("/ig-output/index.html", "_blank", "noopener")}
+            title="Open the built IG in a new browser tab"
+          >
+            <ExternalLink size={13} /> View IG
           </button>
         )}
       </div>
@@ -240,6 +267,15 @@ export function App() {
       )}
 
       {gitOpen && <GitPanel onClose={() => setGitOpen(false)} onChanged={refreshGit} />}
+      {publisherOpen && (
+        <PublisherPanel
+          root={root}
+          onClose={() => {
+            setPublisherOpen(false);
+            checkOutputExists().then(setOutputExists);
+          }}
+        />
+      )}
 
       {cloning && (
         <CloneDialog
@@ -266,6 +302,24 @@ export function App() {
           <Info size={15} className="banner-icon" />
           <span className="banner-msg">{notice}</span>
           <button className="banner-x" onClick={() => setNotice(null)} title="Dismiss" aria-label="Dismiss">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {!sourceMode && !commentsDismissed && !!(profile?.hasComments || resource?.hasComments) && (
+        <div className="banner warn-banner">
+          <AlertTriangle size={15} className="banner-icon" />
+          <span className="banner-msg">
+            This file contains commented-out content that is hidden from the structured editor and won't be written back by edits.
+          </span>
+          <button
+            className="banner-action"
+            onClick={() => setSourceMode(true)}
+            title="Open the raw source file where comments are visible"
+          >
+            Edit source
+          </button>
+          <button className="banner-x" onClick={() => setCommentsDismissed(true)} title="Dismiss" aria-label="Dismiss">
             <X size={14} />
           </button>
         </div>
@@ -336,17 +390,45 @@ export function App() {
         </aside>
 
         <main className="main">
-          {!openArt && (
+          {!openArt && artifacts.length === 0 && (
+            <div className="onboard">
+              <div className="onboard-icon"><BookOpen size={40} strokeWidth={1.25} /></div>
+              <h2>Welcome to IG Builder</h2>
+              <p className="onboard-sub">A structured editor for FHIR Implementation Guides</p>
+              <div className="onboard-steps">
+                <div className="onboard-step">
+                  <div className="onboard-step-num">1</div>
+                  <div className="onboard-step-body">
+                    <strong>Open an IG folder</strong>
+                    <span>Paste a path in the bar above and click <kbd>Load IG</kbd>, or use <kbd>Browse…</kbd> to navigate your file system. Look for the folder that contains <code>sushi-config.yaml</code> or <code>ig.ini</code>.</span>
+                  </div>
+                </div>
+                <div className="onboard-step">
+                  <div className="onboard-step-num">2</div>
+                  <div className="onboard-step-body">
+                    <strong>Select an artifact</strong>
+                    <span>Profiles, Extensions, Examples, ValueSets, and more appear in the sidebar. Click any item to open its structured editor.</span>
+                  </div>
+                </div>
+                <div className="onboard-step">
+                  <div className="onboard-step-num">3</div>
+                  <div className="onboard-step-body">
+                    <strong>Edit and save</strong>
+                    <span>Make changes in the editor. A bar at the bottom tracks pending edits — click <kbd>Write to source</kbd> to write them back to the FHIR source files on disk.</span>
+                  </div>
+                </div>
+              </div>
+              <div className="onboard-or">
+                Don't have an IG yet?{" "}
+                <button onClick={() => setCloning(true)}>Clone an existing IG from Git →</button>
+              </div>
+            </div>
+          )}
+          {!openArt && artifacts.length > 0 && (
             <div className="empty">
               <div className="empty-icon"><BookOpen size={40} strokeWidth={1.25} /></div>
-              <div className="empty-title">
-                {artifacts.length === 0 ? "No IG loaded" : "Nothing selected"}
-              </div>
-              <div className="empty-sub">
-                {artifacts.length === 0
-                  ? "Enter a path and click Load IG, or use Browse to navigate to your IG folder."
-                  : "Select an artifact from the sidebar to view or edit it."}
-              </div>
+              <div className="empty-title">Nothing selected</div>
+              <div className="empty-sub">Select an artifact from the sidebar to view or edit it.</div>
             </div>
           )}
 
@@ -397,6 +479,8 @@ export function App() {
               <ImplementationGuideEditor view={resource} pending={pending} onEdit={queueEdit} />
             ) : resource.editableType && (resource.resourceType === "ValueSet" || resource.resourceType === "CodeSystem") ? (
               <TerminologyEditor view={resource} pending={pending} onEdit={queueEdit} />
+            ) : resource.editableType ? (
+              <ExampleEditor view={resource} pending={pending} onEdit={queueEdit} onEditSource={() => setSourceMode(true)} />
             ) : (
               <ResourceViewer view={resource} onEditSource={() => setSourceMode(true)} />
             )
@@ -405,10 +489,10 @@ export function App() {
             <div className="pending-bar">
               <span className="count">{pending.length} unsaved change(s)</span>
               <span className="spacer" />
-              <button onClick={() => setPending([])} disabled={busy}>
+              <button onClick={() => setPending([])} disabled={busy} title="Discard all pending changes without saving">
                 Discard
               </button>
-              <button className="primary" onClick={save} disabled={busy}>
+              <button className="primary" onClick={save} disabled={busy} title="Apply all pending edits to the FHIR source files on disk">
                 Write to source
               </button>
             </div>
@@ -512,15 +596,22 @@ function ProfileEditor({
                   key={m}
                   className={viewMode === m ? "active" : ""}
                   onClick={() => setViewMode(m)}
+                  title={
+                    m === "key"
+                      ? "Key view: constrained elements plus must-support, summary, and modifier fields"
+                      : m === "diff"
+                        ? "Diff view: only elements this profile explicitly constrains (the differential)"
+                        : "Snapshot view: all elements including inherited base resource fields"
+                  }
                 >
                   {m === "key" ? "Key" : m === "diff" ? "Diff" : "Snapshot"}
                 </button>
               ))}
             </div>
           )}
-          <button onClick={() => setAddEl((v) => !v)}><Plus size={13} /> Element</button>
-          <button onClick={() => setAddExt((v) => !v)}><Plus size={13} /> Extension</button>
-          <button onClick={onEditSource} title="Edit raw source file"><FileCode2 size={13} /> Edit source</button>
+          <button onClick={() => setAddEl((v) => !v)} title="Add a row for a new element path so you can set its cardinality, flags, or binding"><Plus size={13} /> Element</button>
+          <button onClick={() => setAddExt((v) => !v)} title="Add an extension slice to this profile, referencing an extension StructureDefinition by URL"><Plus size={13} /> Extension</button>
+          <button onClick={onEditSource} title="Open the raw FSH / JSON / XML source in a text editor"><FileCode2 size={13} /> Edit source</button>
         </div>
         {addEl && (
           <AddElementForm type={profile.type} onAdd={addElement} onCancel={() => setAddEl(false)} />
@@ -541,9 +632,9 @@ function ProfileEditor({
         <thead>
           <tr>
             <th style={{ width: "34%" }}>Path</th>
-            <th style={{ width: "108px" }}>Flags</th>
-            <th style={{ width: "14%" }}>Card.</th>
-            <th>Binding</th>
+            <th style={{ width: "108px" }} title="MS = Must Support · SU = Is Summary · ?! = Is Modifier — click a flag to toggle it">Flags</th>
+            <th style={{ width: "14%" }} title="Cardinality — minimum and maximum occurrences (e.g. 1..* means required and repeating, 0..1 means optional)">Card.</th>
+            <th title="Value set binding — paste a canonical URL and choose a strength">Binding</th>
             <th style={{ width: "70px" }}></th>
           </tr>
         </thead>
@@ -627,9 +718,15 @@ function AddExtensionForm({
   const [max, setMax] = useState("1");
   return (
     <div className="inline-form">
-      <input placeholder="slice name" value={sliceName} onChange={(e) => setSliceName(e.target.value)} />
       <input
-        placeholder="extension url"
+        placeholder="slice name"
+        title="Short identifier for this extension usage in the profile (e.g. birthPlace)"
+        value={sliceName}
+        onChange={(e) => setSliceName(e.target.value)}
+      />
+      <input
+        placeholder="extension canonical URL"
+        title="The StructureDefinition.url of the extension being referenced (e.g. http://hl7.org/fhir/StructureDefinition/patient-birthPlace)"
         size={36}
         value={url}
         onChange={(e) => setUrl(e.target.value)}
@@ -676,12 +773,18 @@ function AddSliceForm({
   const [discPath, setDiscPath] = useState("");
   return (
     <div className="inline-form">
-      <input placeholder="slice name" value={sliceName} onChange={(e) => setSliceName(e.target.value)} />
-      <input className="num" type="number" min={0} value={min} onChange={(e) => setMin(Number(e.target.value))} />
+      <input
+        placeholder="slice name"
+        title="Short identifier for this slice (e.g. MRN, passport, or phone)"
+        value={sliceName}
+        onChange={(e) => setSliceName(e.target.value)}
+      />
+      <input className="num" type="number" min={0} value={min} title="Minimum occurrences" onChange={(e) => setMin(Number(e.target.value))} />
       <span>..</span>
-      <input className="num" value={max} onChange={(e) => setMax(e.target.value)} />
+      <input className="num" value={max} title="Maximum occurrences (* = unbounded)" onChange={(e) => setMax(e.target.value)} />
       <input
         placeholder="discriminator path (opt)"
+        title="FHIR path used to distinguish this slice from others (e.g. system, type, url). Leave blank for open slicing."
         size={18}
         value={discPath}
         onChange={(e) => setDiscPath(e.target.value)}
@@ -738,6 +841,11 @@ function ElementRow({
   const max = pendingCard?.max ?? el.max ?? "*";
   const vs = pendingBind?.valueSet ?? el.binding?.valueSet ?? "";
   const strength = pendingBind?.strength ?? el.binding?.strength ?? "required";
+  const FLAG_TOOLTIPS: Record<ElementFlag, string> = {
+    mustSupport: "Must Support (MS) — implementations are required to support this element",
+    isSummary: "Is Summary (SU) — element is included in ?_summary=true search responses",
+    isModifier: "Is Modifier (?!) — the presence or value of this element changes the meaning of the resource",
+  };
   const flags: { flag: ElementFlag; on: boolean }[] = [
     { flag: "mustSupport", on: flagValue("mustSupport", el.mustSupport) },
     { flag: "isSummary", on: flagValue("isSummary", el.isSummary) },
@@ -784,7 +892,7 @@ function ElementRow({
                 key={flag}
                 type="button"
                 className={"flag-toggle" + (on ? " on" : "")}
-                title={`${flag} — click to ${on ? "clear" : "set"}`}
+                title={`${FLAG_TOOLTIPS[flag]} · click to ${on ? "clear" : "set"}`}
                 onClick={() =>
                   onEdit({ kind: "setFlag", artifactId, path: editKey, flag, value: !on })
                 }
@@ -800,6 +908,7 @@ function ElementRow({
             type="number"
             min={0}
             value={min}
+            title="Minimum occurrences (0 = optional, 1 = required)"
             onChange={(e) =>
               onEdit({
                 kind: "setCardinality",
@@ -813,6 +922,7 @@ function ElementRow({
           <span>..</span>
           <input
             value={max}
+            title={'Maximum occurrences (1 = single, * = unbounded, 0 = prohibited)'}
             onChange={(e) =>
               onEdit({
                 kind: "setCardinality",
@@ -830,6 +940,7 @@ function ElementRow({
           placeholder="(no binding)"
           value={vs}
           size={28}
+          title="Value set canonical URL — the set of codes allowed for this element"
           onChange={(e) =>
             onEdit({
               kind: "setBinding",
@@ -842,6 +953,7 @@ function ElementRow({
         />{" "}
         <select
           value={strength}
+          title="Binding strength — required: only listed codes · extensible: prefer listed codes · preferred: recommendation · example: illustration only"
           onChange={(e) =>
             onEdit({
               kind: "setBinding",
@@ -860,7 +972,7 @@ function ElementRow({
       </td>
       <td className="row-actions">
         {canSlice && (
-          <button title="Add slice" onClick={() => setAddingSlice((v) => !v)}>
+          <button title="Add a named slice to this element (e.g. to constrain a specific identifier system or extension)" onClick={() => setAddingSlice((v) => !v)}>
             <Plus size={12} /> slice
           </button>
         )}

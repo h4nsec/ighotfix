@@ -3,25 +3,52 @@ import type { Artifact } from "@igb/shared";
 import { createArtifact } from "./api.js";
 import { X } from "lucide-react";
 
-type NewType = "SearchParameter" | "CapabilityStatement";
+type NewType = "SearchParameter" | "CapabilityStatement" | "Example";
+
+const FHIR_RESOURCE_TYPES = [
+  "AllergyIntolerance",
+  "CarePlan",
+  "CareTeam",
+  "Condition",
+  "Device",
+  "DiagnosticReport",
+  "Encounter",
+  "Goal",
+  "Immunization",
+  "Location",
+  "Medication",
+  "MedicationRequest",
+  "MedicationStatement",
+  "Observation",
+  "Organization",
+  "Patient",
+  "Practitioner",
+  "PractitionerRole",
+  "Procedure",
+  "RelatedPerson",
+  "ServiceRequest",
+  "Specimen",
+];
 
 /** Infer the canonical URL base from an existing artifact's url. */
 function inferCanonicalBase(artifacts: Artifact[]): string {
   for (const a of artifacts) {
     if (!a.url) continue;
-    // Strip the trailing "/<ResourceType>/<id>" to get the canonical base.
     const m = /^(.*)\/[A-Za-z]+\/[^/]+$/.exec(a.url);
     if (m) return m[1];
   }
   return "";
 }
 
-/** Place new files beside existing definitional artifacts (profiles/capabilities). */
-function inferDir(artifacts: Artifact[]): string {
+function inferDir(artifacts: Artifact[], type: NewType): string {
   const near =
-    artifacts.find((a) => a.category === "Capabilities") ??
-    artifacts.find((a) => a.category === "Profiles") ??
-    artifacts[0];
+    type === "Example"
+      ? (artifacts.find((a) => a.category === "Examples") ??
+          artifacts.find((a) => a.category === "Profiles") ??
+          artifacts[0])
+      : (artifacts.find((a) => a.category === "Capabilities") ??
+          artifacts.find((a) => a.category === "Profiles") ??
+          artifacts[0]);
   if (!near) return "";
   const i = near.id.lastIndexOf("/");
   return i === -1 ? "" : near.id.slice(0, i);
@@ -48,13 +75,19 @@ export function NewArtifactDialog({
   const [id, setId] = useState("");
   const [idTouched, setIdTouched] = useState(false);
   const [language, setLanguage] = useState<"json" | "xml" | "fsh">(() => inferLanguage(artifacts));
+  const [fhirResourceType, setFhirResourceType] = useState("Patient");
+  const [profile, setProfile] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const dir = useMemo(() => inferDir(artifacts), [artifacts]);
+  const dir = useMemo(() => inferDir(artifacts, type), [artifacts, type]);
   const canonicalBase = useMemo(() => inferCanonicalBase(artifacts), [artifacts]);
 
-  // Auto-derive an id slug from the name until the user edits id directly.
+  const profileArtifacts = useMemo(
+    () => artifacts.filter((a) => a.category === "Profiles" && a.url),
+    [artifacts],
+  );
+
   const effectiveId = idTouched
     ? id
     : name
@@ -62,6 +95,8 @@ export function NewArtifactDialog({
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-+|-+$/g, "");
+
+  const isExample = type === "Example";
 
   async function create() {
     setBusy(true);
@@ -74,6 +109,10 @@ export function NewArtifactDialog({
         language,
         dir,
         canonicalBase,
+        ...(isExample && {
+          fhirResourceType,
+          profile: profile || undefined,
+        }),
       });
       onCreated(artifactId);
     } catch (e) {
@@ -82,6 +121,8 @@ export function NewArtifactDialog({
       setBusy(false);
     }
   }
+
+  const fileHint = (dir ? dir + "/" : "") + (effectiveId || "…") + "." + language;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -94,7 +135,7 @@ export function NewArtifactDialog({
         <div className="new-form">
           <label>Type</label>
           <div className="seg">
-            {(["SearchParameter", "CapabilityStatement"] as NewType[]).map((t) => (
+            {(["SearchParameter", "CapabilityStatement", "Example"] as NewType[]).map((t) => (
               <button
                 key={t}
                 className={type === t ? "on" : ""}
@@ -105,18 +146,52 @@ export function NewArtifactDialog({
             ))}
           </div>
 
-          <label>Name</label>
+          {isExample && (
+            <>
+              <label>Resource type</label>
+              <select value={fhirResourceType} onChange={(e) => setFhirResourceType(e.target.value)}>
+                {FHIR_RESOURCE_TYPES.map((rt) => (
+                  <option key={rt}>{rt}</option>
+                ))}
+              </select>
+
+              <label>
+                Profile{" "}
+                <span style={{ fontWeight: "normal", opacity: 0.6, fontSize: "0.85em" }}>
+                  (optional)
+                </span>
+              </label>
+              {profileArtifacts.length > 0 ? (
+                <select value={profile} onChange={(e) => setProfile(e.target.value)}>
+                  <option value="">— none —</option>
+                  {profileArtifacts.map((a) => (
+                    <option key={a.url} value={a.url}>
+                      {a.title ?? a.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={profile}
+                  placeholder="https://..."
+                  onChange={(e) => setProfile(e.target.value)}
+                />
+              )}
+            </>
+          )}
+
+          <label>{isExample ? "Label / id hint" : "Name"}</label>
           <input
             autoFocus
             value={name}
-            placeholder="e.g. MyPatientSearch"
+            placeholder={isExample ? "e.g. AU Core Patient Example" : "e.g. MyPatientSearch"}
             onChange={(e) => setName(e.target.value)}
           />
 
           <label>Id / filename</label>
           <input
             value={effectiveId}
-            placeholder="my-patient-search"
+            placeholder={isExample ? "au-core-patient-example" : "my-patient-search"}
             onChange={(e) => {
               setIdTouched(true);
               setId(e.target.value);
@@ -133,11 +208,17 @@ export function NewArtifactDialog({
           </div>
 
           <div className="new-hint">
-            Will create <code>{(dir ? dir + "/" : "") + (effectiveId || "…") + "." + language}</code>
-            {canonicalBase && (
+            Will create <code>{fileHint}</code>
+            {!isExample && canonicalBase && (
               <>
                 <br />
                 url: <code>{`${canonicalBase}/${type}/${effectiveId || "…"}`}</code>
+              </>
+            )}
+            {isExample && profile && (
+              <>
+                <br />
+                profile: <code>{profile}</code>
               </>
             )}
           </div>
@@ -150,7 +231,11 @@ export function NewArtifactDialog({
           <button onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button className="primary" onClick={create} disabled={busy || !name.trim() || !effectiveId}>
+          <button
+            className="primary"
+            onClick={create}
+            disabled={busy || (!isExample && !name.trim()) || !effectiveId}
+          >
             Create
           </button>
         </div>

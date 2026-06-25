@@ -152,10 +152,10 @@ export function GitPanel({ onClose, onChanged }: { onClose: () => void; onChange
                 </div>
                 {!status.clean && (
                   <div className="git-stage-all">
-                    <button disabled={busy} onClick={() => run(() => gitStageAll())}>
+                    <button disabled={busy} title="Stage all changed files for the next commit" onClick={() => run(() => gitStageAll())}>
                       Stage all
                     </button>
-                    <button disabled={busy || stagedCount === 0} onClick={() => run(() => gitUnstageAll())}>
+                    <button disabled={busy || stagedCount === 0} title="Remove all files from the staging area" onClick={() => run(() => gitUnstageAll())}>
                       Unstage all
                     </button>
                   </div>

@@ -179,8 +179,11 @@ export function localName(name: string): string {
  * read-only tooling can treat XML and JSON sources uniformly. Leaf elements
  * (`<x value="y"/>`) become primitives; repeated elements become arrays;
  * non-`value` attributes (e.g. an extension's `url`) are kept as properties.
+ *
+ * Pass `src` (the full document text) to capture `text.div` as its raw XHTML
+ * string instead of the `"(xhtml)"` placeholder.
  */
-export function xmlToObject(el: XmlElement): unknown {
+export function xmlToObject(el: XmlElement, src?: string): unknown {
   const valueAttr = attrValue(el, "value");
   const otherAttrs = el.attrs.filter((a) => a.name !== "value" && a.name !== "xmlns");
 
@@ -195,10 +198,11 @@ export function xmlToObject(el: XmlElement): unknown {
   for (const c of el.children) {
     const name = localName(c.name);
     if (name === "div") {
-      obj[name] = "(xhtml)";
+      // Capture the full <div>...</div> as a raw XHTML string, matching FHIR JSON representation.
+      obj[name] = src ? src.slice(c.tagStart, c.closeTagEnd) : "(xhtml)";
       continue;
     }
-    const v = xmlToObject(c);
+    const v = xmlToObject(c, src);
     if (obj[name] === undefined) obj[name] = v;
     else {
       if (!Array.isArray(obj[name])) obj[name] = [obj[name]];
@@ -212,7 +216,7 @@ export function xmlToObject(el: XmlElement): unknown {
 export function xmlResourceObject(text: string): any {
   const root = scanXml(text).find((e) => localName(e.name) !== "?xml") ?? scanXml(text)[0];
   if (!root) return null;
-  const obj = xmlToObject(root);
+  const obj = xmlToObject(root, text);
   if (obj && typeof obj === "object") (obj as any).resourceType = localName(root.name);
   return obj;
 }

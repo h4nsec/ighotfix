@@ -10,9 +10,10 @@ import type {
 } from "@igb/shared";
 import { loadIg, loadSource, readRaw } from "./loader.js";
 import { browse } from "./browse.js";
-import { buildResourceView } from "./resource.js";
+import { buildResourceView, detectComments } from "./resource.js";
 import { createArtifact, type CreateRequest } from "./create.js";
 import * as gitOps from "./git.js";
+import * as publisherOps from "./publisher.js";
 import { sendErr, friendlyMessage } from "./errors.js";
 import { stat } from "node:fs/promises";
 import {
@@ -111,6 +112,7 @@ app.get("/api/profile", async (req, res) => {
       return res.status(422).json({
         error: `${artifact.name} is a ${artifact.resourceType}, not an editable profile.`,
       });
+    view.hasComments = detectComments(src.text, src.language);
     res.json(view);
   } catch (err) {
     sendErr(res, 500, err);
@@ -272,6 +274,26 @@ app.post("/api/create", async (req, res) => {
   }
 });
 
+app.get("/api/output-exists", async (_req, res) => {
+  if (!currentRoot) return res.json({ exists: false });
+  try {
+    await stat(path.join(currentRoot, "output", "index.html"));
+    res.json({ exists: true });
+  } catch {
+    res.json({ exists: false });
+  }
+});
+
+/** Serve the IG Publisher output folder at /ig-output/* so the browser can open it. */
+app.get("/ig-output/*", (req, res) => {
+  if (!currentRoot) return res.status(409).send("No IG loaded.");
+  const rel = (req.params as any)[0] as string;
+  const filePath = path.join(currentRoot, "output", rel || "index.html");
+  res.sendFile(filePath, (err) => {
+    if (err && !res.headersSent) res.status(404).send("Not found.");
+  });
+});
+
 app.post("/api/edits", async (req, res) => {
   const { artifactId, edits, write } = req.body as ApplyEditsRequest;
   if (!currentRoot) return res.status(409).json({ error: "Load an IG first." });
@@ -294,6 +316,76 @@ app.post("/api/edits", async (req, res) => {
   } catch (err) {
     sendErr(res, 500, err);
   }
+});
+
+/* ---------------- publisher ---------------- */
+
+app.post("/api/publisher/detect", async (req, res) => {
+  const root = (req.body?.root as string | undefined) ?? currentRoot ?? process.cwd();
+  try {
+    res.json(await publisherOps.detectSetup(path.resolve(root)));
+  } catch (err) {
+    sendErr(res, 500, err);
+  }
+});
+
+function streamPublisher(
+  res: express.Response,
+  run: (onEvent: (e: publisherOps.BuildEvent) => void, signal: AbortSignal) => Promise<void>,
+) {
+  res.setHeader("Content-Type", "application/x-ndjson");
+  res.flushHeaders();
+  const ac = new AbortController();
+  let finished = false;
+  // Use res.on("close") — fires on premature disconnect, same as the clone route.
+  // req.on("close") can fire as soon as the request body is consumed, which is too early.
+  res.on("close", () => { if (!finished) ac.abort(); });
+  const write = (obj: unknown) => {
+    if (res.writableEnded) return;
+    try { res.write(JSON.stringify(obj) + "\n"); } catch { /* client gone */ }
+  };
+  run(write, ac.signal)
+    .catch(() => { /* errors are surfaced as output events by the run function */ })
+    .finally(() => {
+      finished = true;
+      if (!res.writableEnded) res.end();
+    });
+}
+
+app.post("/api/publisher/build", (req, res) => {
+  const root = requireRoot(res);
+  if (!root) return;
+  const { jarPath, mode, txUrl, javaExe, rubyBinDir } = req.body ?? {};
+  if (!jarPath) return res.status(400).json({ error: "jarPath is required." });
+
+  streamPublisher(res, (onEvent, signal) =>
+    publisherOps.startBuild({ root, jarPath, mode: mode ?? "full", txUrl, javaExe, rubyBinDir }, onEvent, signal),
+  );
+});
+
+app.post("/api/publisher/watch", (req, res) => {
+  const root = requireRoot(res);
+  if (!root) return;
+  const { jarPath, mode, txUrl, javaExe, rubyBinDir } = req.body ?? {};
+  if (!jarPath) return res.status(400).json({ error: "jarPath is required." });
+
+  res.setHeader("Content-Type", "application/x-ndjson");
+  res.flushHeaders();
+
+  const write = (obj: unknown) => {
+    if (res.writableEnded) return;
+    try { res.write(JSON.stringify(obj) + "\n"); } catch { /* client gone */ }
+  };
+
+  const stop = publisherOps.startWatch(
+    { root, jarPath, mode: mode ?? "full", txUrl, javaExe, rubyBinDir },
+    (e) => {
+      write(e);
+      if (e.type === "stopped" && !res.writableEnded) res.end();
+    },
+  );
+
+  res.on("close", stop);
 });
 
 function idToRel(id: string): string {
