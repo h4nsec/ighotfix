@@ -10,7 +10,7 @@ import type {
 } from "@igb/shared";
 import { loadIg, loadSource, readRaw } from "./loader.js";
 import { browse } from "./browse.js";
-import { buildResourceView } from "./resource.js";
+import { buildResourceView, detectComments } from "./resource.js";
 import { createArtifact, type CreateRequest } from "./create.js";
 import * as gitOps from "./git.js";
 import * as publisherOps from "./publisher.js";
@@ -112,6 +112,7 @@ app.get("/api/profile", async (req, res) => {
       return res.status(422).json({
         error: `${artifact.name} is a ${artifact.resourceType}, not an editable profile.`,
       });
+    view.hasComments = detectComments(src.text, src.language);
     res.json(view);
   } catch (err) {
     sendErr(res, 500, err);
@@ -271,6 +272,26 @@ app.post("/api/create", async (req, res) => {
   } catch (err) {
     sendErr(res, 400, err);
   }
+});
+
+app.get("/api/output-exists", async (_req, res) => {
+  if (!currentRoot) return res.json({ exists: false });
+  try {
+    await stat(path.join(currentRoot, "output", "index.html"));
+    res.json({ exists: true });
+  } catch {
+    res.json({ exists: false });
+  }
+});
+
+/** Serve the IG Publisher output folder at /ig-output/* so the browser can open it. */
+app.get("/ig-output/*", (req, res) => {
+  if (!currentRoot) return res.status(409).send("No IG loaded.");
+  const rel = (req.params as any)[0] as string;
+  const filePath = path.join(currentRoot, "output", rel || "index.html");
+  res.sendFile(filePath, (err) => {
+    if (err && !res.headersSent) res.status(404).send("Not found.");
+  });
 });
 
 app.post("/api/edits", async (req, res) => {

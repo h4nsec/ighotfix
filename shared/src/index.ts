@@ -184,6 +184,8 @@ export interface ProfileView {
   derivation?: Derivation;
   url?: string;
   elements: ElementView[];
+  /** True when the source file contains commented-out content. */
+  hasComments?: boolean;
 }
 
 /* ------------------------------------------------------------------ *
@@ -193,6 +195,10 @@ export interface ProfileView {
 export interface ResourceField {
   label: string;
   value: string;
+  /** FHIR path for setValue edits, e.g. "code.text" or "extension[0].valueString". */
+  path?: string;
+  /** FHIR path for removeValue — may differ from path (e.g. remove whole extension vs just its value). */
+  removePath?: string;
 }
 
 export interface ResourceSection {
@@ -200,7 +206,16 @@ export interface ResourceSection {
   /** Simple key/value rows. */
   rows?: ResourceField[];
   /** Tabular data (e.g. CapabilityStatement resources). */
-  table?: { headers: string[]; rows: string[][] };
+  table?: {
+    headers: string[];
+    rows: string[][];
+    /** Parallel FHIR paths for each cell — present on editable array sections, empty string means read-only. */
+    rowPaths?: string[][];
+  };
+  /** Original FHIR key when this section was generated from a top-level array, enables row removal. */
+  arrayKey?: string;
+  /** Marks sections that have a dedicated add UI in the editor. */
+  kind?: "extensions";
 }
 
 /** A structured, read-only projection of any FHIR artifact. */
@@ -223,6 +238,8 @@ export interface ResourceView {
   data?: unknown;
   /** True when this resource type has a dedicated structured editor. */
   editableType?: boolean;
+  /** True when the source file contains commented-out content invisible to the structured editor. */
+  hasComments?: boolean;
 }
 
 /** Parse a FHIR element path ("rest[0].resource[2].code") into segments. */

@@ -1,7 +1,7 @@
 import { writeFile, mkdir, access } from "node:fs/promises";
 import path from "node:path";
 
-export type CreatableType = "SearchParameter" | "CapabilityStatement";
+export type CreatableType = "SearchParameter" | "CapabilityStatement" | "Example";
 
 export interface CreateRequest {
   resourceType: CreatableType;
@@ -13,6 +13,10 @@ export interface CreateRequest {
   dir?: string;
   /** Canonical URL base, e.g. "http://hl7.org.au/fhir/core". */
   canonicalBase?: string;
+  /** For Example: actual FHIR resource type, e.g. "Patient". */
+  fhirResourceType?: string;
+  /** For Example: profile URL to add to meta.profile / FSH InstanceOf. */
+  profile?: string;
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -49,6 +53,18 @@ function skeletonObject(req: CreateRequest, url: string): any {
     format: ["json", "xml"],
     rest: [{ mode: "server", resource: [] }],
   };
+}
+
+function exampleObject(req: CreateRequest): any {
+  const rt = req.fhirResourceType ?? "Patient";
+  const obj: any = { resourceType: rt, id: req.id };
+  if (req.profile) obj.meta = { profile: [req.profile] };
+  return obj;
+}
+
+function exampleToFsh(obj: any, profile?: string): string {
+  const instanceOf = profile ?? obj.resourceType;
+  return [`Instance: ${obj.id}`, `InstanceOf: ${instanceOf}`, `Usage: #example`].join("\n");
 }
 
 /** Serialize the skeleton object to pretty JSON, FHIR XML, or FSH. */
@@ -162,11 +178,21 @@ export async function createArtifact(
 
   if (await exists(absPath)) throw new Error(`File already exists: ${relPath}`);
 
-  const base = (req.canonicalBase || "http://example.org/fhir").replace(/\/+$/, "");
-  const url = `${base}/${req.resourceType}/${id}`;
-  const obj = skeletonObject({ ...req, id }, url);
+  let content: string;
+  if (req.resourceType === "Example") {
+    const obj = exampleObject({ ...req, id });
+    content =
+      req.language === "fsh"
+        ? exampleToFsh(obj, req.profile) + "\n"
+        : serialize(obj, req.language);
+  } else {
+    const base = (req.canonicalBase || "http://example.org/fhir").replace(/\/+$/, "");
+    const url = `${base}/${req.resourceType}/${id}`;
+    const obj = skeletonObject({ ...req, id }, url);
+    content = serialize(obj, req.language);
+  }
 
   await mkdir(absDir, { recursive: true });
-  await writeFile(absPath, serialize(obj, req.language), "utf8");
+  await writeFile(absPath, content, "utf8");
   return { artifactId: relPath };
 }

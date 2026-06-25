@@ -40,6 +40,16 @@ export function loadIg(root: string): Promise<IgSummary> {
   return jpost<IgSummary>("/api/load", { root });
 }
 
+export async function checkOutputExists(): Promise<boolean> {
+  try {
+    const res = await fetch("/api/output-exists");
+    if (!res.ok) return false;
+    return (await res.json()).exists === true;
+  } catch {
+    return false;
+  }
+}
+
 export interface BrowseDir {
   name: string;
   path: string;
@@ -64,12 +74,14 @@ export async function getHome(): Promise<string> {
 }
 
 export interface CreateArtifactRequest {
-  resourceType: "SearchParameter" | "CapabilityStatement";
+  resourceType: "SearchParameter" | "CapabilityStatement" | "Example";
   id: string;
   name: string;
   language: "json" | "xml" | "fsh";
   dir?: string;
   canonicalBase?: string;
+  fhirResourceType?: string;
+  profile?: string;
 }
 
 export function createArtifact(req: CreateArtifactRequest): Promise<{ artifactId: string }> {

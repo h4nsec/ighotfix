@@ -348,7 +348,14 @@ function setValueAtPath(text: string, path: string, value: unknown): string {
   const parent = walkPath(root, segs.slice(0, -1));
   if (!parent) return text;
   const existing = child(parent, last);
-  if (existing) return setValueAttr(text, existing, value);
+  if (existing) {
+    // XHTML narrative <div> contains nested markup, not a value attribute.
+    // Replace the entire element with the new XHTML string.
+    if (last === "div" && typeof value === "string") {
+      return splice(text, existing.tagStart, existing.closeTagEnd, value);
+    }
+    return setValueAttr(text, existing, value);
+  }
   // Append a new leaf at the end of the parent's children.
   const indent = childIndent(text, parent);
   const block = `\n${indent}<${last} value="${primitiveStr(value)}"/>`;
@@ -366,13 +373,15 @@ function objectToXml(name: string, value: unknown, indent: string): string {
     return `${indent}<${name} value="${primitiveStr(value)}"/>`;
   }
   const entries = Object.entries(value as Record<string, unknown>);
-  // FHIR XML carries url/id (and primitive `value`) as attributes on the tag.
+  // In FHIR XML, only `url` and `id` are encoded as attributes on the element.
+  // All other fields — including those whose JSON key happens to be "value"
+  // (e.g. ContactPoint.value, Quantity.value) — become child elements.
   const attrs = entries
-    .filter(([k, v]) => (XML_ATTR_KEYS.has(k) || k === "value") && typeof v !== "object")
+    .filter(([k, v]) => XML_ATTR_KEYS.has(k) && typeof v !== "object")
     .map(([k, v]) => ` ${k}="${primitiveStr(v)}"`)
     .join("");
   const childEntries = entries.filter(
-    ([k, v]) => !((XML_ATTR_KEYS.has(k) || k === "value") && typeof v !== "object"),
+    ([k, v]) => !(XML_ATTR_KEYS.has(k) && typeof v !== "object"),
   );
   if (childEntries.length === 0) return `${indent}<${name}${attrs}/>`;
   const lines = [`${indent}<${name}${attrs}>`];
@@ -408,17 +417,30 @@ function removeValueAtPath(text: string, path: string): string {
   if (!root) return text;
   const segs = parsePath(path);
   const last = segs[segs.length - 1];
-  const target =
-    typeof last === "number"
-      ? walkPath(root, segs)
-      : (() => {
-          const parent = walkPath(root, segs.slice(0, -1));
-          return parent && child(parent, last);
-        })();
-  if (!target) return text;
-  const lineStart = text.lastIndexOf("\n", target.tagStart);
-  const from = lineStart === -1 ? target.tagStart : lineStart;
-  return splice(text, from, target.closeTagEnd, "");
+
+  if (typeof last === "number") {
+    // Indexed removal: remove exactly that one element.
+    const target = walkPath(root, segs);
+    if (!target) return text;
+    const lineStart = text.lastIndexOf("\n", target.tagStart);
+    const from = lineStart === -1 ? target.tagStart : lineStart;
+    return splice(text, from, target.closeTagEnd, "");
+  }
+
+  // Named removal: remove ALL children with this name (handles repeating elements like
+  // <telecom> or <identifier> where "delete section" should clear every occurrence).
+  const parent = walkPath(root, segs.slice(0, -1));
+  if (!parent) return text;
+  const targets = children(parent, last as string);
+  if (targets.length === 0) return text;
+  // Process in reverse order so earlier offsets remain valid after each splice.
+  let out = text;
+  for (const target of [...targets].reverse()) {
+    const lineStart = out.lastIndexOf("\n", target.tagStart);
+    const from = lineStart === -1 ? target.tagStart : lineStart;
+    out = out.slice(0, from) + out.slice(target.closeTagEnd);
+  }
+  return out;
 }
 
 interface NewElement {
